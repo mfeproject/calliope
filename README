@@ -1,0 +1,5 @@
+After cloning the repository you'll need to fetch the petaca submodule:
+
+  $ cd mfeproject-calliope-code
+  $ git submodule update --init
+
