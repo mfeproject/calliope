@@ -1,0 +1,6 @@
+include_directories(${Petaca_BINARY_DIR}/mod_files)
+message(STATUS "Petaca_BINARY_DIR=${Petaca_BINARY_DIR}")
+include_directories(${CalliopeLib_BINARY_DIR})
+include_directories(${CalliopeLib_SOURCE_DIR})
+add_executable(nodal_fem_1d newtest.F90 nodal_fem_1d.F90)
+target_link_libraries(nodal_fem_1d calliope)
