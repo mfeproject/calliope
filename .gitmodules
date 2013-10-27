@@ -1,0 +1,3 @@
+[submodule "petaca"]
+	path = petaca
+	url = git://git.code.sf.net/p/petaca/code
