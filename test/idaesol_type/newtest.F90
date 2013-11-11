@@ -2,15 +2,15 @@ program main
 
   use kinds
   use nodal_FEM_1D
-  use bdf2_dae
+  use idaesol_type
   use parameter_list_type
   implicit none
   
   integer :: nstep, status, nnode
   real(r8) :: tout, t, h
   real(r8), allocatable :: u(:)
-  type(state) :: s
-  class(bdf2_model_evaluator), pointer :: bdf2_prob
+  type(idaesol) :: s
+  class(idaesol_model), pointer :: bdf2_prob
   type(ht_model), pointer :: prob
   type(parameter_list) :: bdf_params
   
@@ -50,6 +50,6 @@ program main
     print *, t
   end select
   
-  call write_bdf2_stepping_statistics (s, 0)
+  call s%write_metrics (0)
   
 end program main

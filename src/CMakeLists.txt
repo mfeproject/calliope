@@ -2,7 +2,7 @@ project(CalliopeLib)
 
 include_directories(${Petaca_BINARY_DIR}/mod_files)
 
-add_library(calliope kinds.F90 bdf2_dae.F90 nka_type.F90 kinds.F90)
+add_library(calliope kinds.F90 idaesol_type.F90 nka_type.F90 kinds.F90)
 target_link_libraries(calliope petaca)
 
 ## # Create all the Fortran module files in a directory at the root build directory

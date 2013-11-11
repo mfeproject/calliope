@@ -1,1 +1,1 @@
-add_subdirectory(bdf2_dae)
+add_subdirectory(idaesol_type)

@@ -2,12 +2,12 @@
 
 module nodal_FEM_1D
 
-  use bdf2_dae, only: bdf2_model_evaluator 
+  use idaesol_type, only: idaesol_model 
   use kinds
   implicit none
   private
   
-  type, extends(bdf2_model_evaluator), public :: ht_model
+  type, extends(idaesol_model), public :: ht_model
     private
     real(r8), public :: d
     real(r8), public :: atol, rtol

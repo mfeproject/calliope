@@ -1,28 +1,22 @@
 !!
-!! BDF2_DAE
+!! IDAESOL_TYPE
 !!
 !! Neil N. Carlson <neil.n.carlson@gmail.com>
-!! Last revised 14 Aug 2006
-!!
-!! PROGRAMMING INTERFACE
 !!
 
 #include "f90_assert.fpp"
 
-module bdf2_dae
+module idaesol_type
 
-  use kinds
+  use,intrinsic :: iso_fortran_env, only: r8 => real64
   use state_history_type
   use nka_type
   implicit none
   private
 
-  public :: bdf2_step, bdf2_step_driver
-  public :: write_bdf2_stepping_statistics, bdf2_stepping_stats
-  
-  type, public :: state
+  type, public :: idaesol
     private
-    class(bdf2_model_evaluator), pointer :: model => null()
+    class(idaesol_model), pointer :: model => null()
     integer  :: n                   ! number of unknowns
     integer  :: seq = -1            ! number of steps taken
     real(r8) :: hlast               ! last step size
@@ -31,7 +25,7 @@ module bdf2_dae
     integer  :: freeze_count = 0    ! don't increase step size for this number of steps
     integer  :: mitr = 5            ! maximum number of nonlinear iterations
     real(r8) :: ntol = 0.1_r8       ! nonlinear solver error tolerance (relative to 1)
-    type(nka) :: accel          ! nonlinear solver (AIN) accelerator structure
+    type(nka) :: nka          ! nonlinear solver (AIN) accelerator structure
     type(state_history)   :: uhist        ! solution history structure
 
     !! Perfomance counters
@@ -60,22 +54,10 @@ module bdf2_dae
     procedure :: last_step_size
     procedure :: set_verbose_stepping
     procedure :: set_quiet_stepping
-  end type state
+    procedure :: write_metrics
+  end type idaesol
   
-  type, public :: bdf2_stats
-    real(r8) :: tlast               !
-    real(r8) :: hlast
-    real(r8) :: hmin, hmax
-    integer :: steps                ! number of BDF2 steps completed
-    integer :: pcfun_calls = 0      ! number of calls to PCFUN
-    integer :: updpc_calls = 0      ! number of calls to UPDPC
-    integer :: updpc_failed = 0     ! number of UPDPC calls returning an error
-    integer :: retried_bce = 0      ! number of retried BCE steps
-    integer :: failed_bce = 0       ! number of completely failed BCE steps
-    integer :: rejected_steps = 0   ! number of steps rejected on error tolerance
-  end type bdf2_stats
-
-  type, abstract, public :: bdf2_model_evaluator
+  type, abstract, public :: idaesol_model
   contains
     procedure(model_size), deferred :: size
     procedure(compute_f), deferred :: compute_f
@@ -87,35 +69,35 @@ module bdf2_dae
   
   abstract interface
     integer function model_size (this)
-      import bdf2_model_evaluator
-      class(bdf2_model_evaluator), intent(in) :: this
+      import idaesol_model
+      class(idaesol_model), intent(in) :: this
     end function model_size
     subroutine compute_f (this, t, u, udot, f)
-      import bdf2_model_evaluator, r8
-      class(bdf2_model_evaluator) :: this
+      import idaesol_model, r8
+      class(idaesol_model) :: this
       real(r8), intent(in)  :: t, u(:), udot(:)
       real(r8), intent(out) :: f(:)
     end subroutine compute_f
     subroutine apply_precon (this, t, u, f)
-      import bdf2_model_evaluator, r8
-      class(bdf2_model_evaluator) :: this
+      import idaesol_model, r8
+      class(idaesol_model) :: this
       real(r8), intent(in) :: t, u(:)
       real(r8), intent(inout) :: f(:)
     end subroutine apply_precon
     subroutine compute_precon (this, t, u, dt)
-      import bdf2_model_evaluator, r8
-      class(bdf2_model_evaluator) :: this
+      import idaesol_model, r8
+      class(idaesol_model) :: this
       real(r8), intent(in)  :: t, u(:), dt
     end subroutine compute_precon
     subroutine du_norm (this, u, du, error)
-      import :: bdf2_model_evaluator, r8
-      class(bdf2_model_evaluator) :: this
+      import :: idaesol_model, r8
+      class(idaesol_model) :: this
       real(r8), intent(in) :: u(:), du(:)
       real(r8), intent(out) :: error
     end subroutine du_norm
     subroutine schk (this, u, stage, errc)
-      import :: bdf2_model_evaluator, r8
-      class(bdf2_model_evaluator) :: this
+      import :: idaesol_model, r8
+      class(idaesol_model) :: this
       real(r8), intent(in)  :: u(:)
       integer,  intent(in)  :: stage
       integer,  intent(out) :: errc
@@ -138,23 +120,66 @@ module bdf2_dae
 contains
 
   subroutine get_last_state_view (this, view)
-    class(state), intent(in) :: this
+    class(idaesol), intent(in) :: this
     real(r8), pointer, intent(out) :: view(:)
     call this%uhist%get_last_state_view (view)
   end subroutine get_last_state_view
 
   subroutine get_last_state_copy (this, copy)
-    class(state), intent(in) :: this
+    class(idaesol), intent(in) :: this
     real(r8), intent(out) :: copy(:)
     call this%uhist%get_last_state_copy (copy)
   end subroutine get_last_state_copy
+
+  function last_time (this) result (t)
+    class(idaesol), intent(in) :: this
+    real(r8) :: t
+    t = this%uhist%last_time()
+  end function last_time
+
+  function last_step_size (this) result (h)
+    class(idaesol), intent(in) :: this
+    real(r8) :: h
+    h = this%hlast
+  end function last_step_size
+
+  subroutine get_interpolated_state (this, t, u, first)
+    class(idaesol), intent(in) :: this
+    real(r8), intent(in) :: t
+    real(r8), intent(out) :: u(:)
+    integer, intent(in), optional :: first
+    call this%uhist%interp_state (t, u, first)
+  end subroutine get_interpolated_state
+
+  subroutine write_metrics (this, unit)
+    class(idaesol), intent(in) :: this
+    integer, intent(in) :: unit
+    write(unit,fmt='(/,a,i6,a,es11.5,a,es9.3)') &
+      'STEP=', this%seq, ', T=', this%uhist%last_time(), ', H=', this%hlast
+    write(unit,fmt='(a,i7.7,":",i5.5,a,5(i4.4,:,":"))') &
+      'NFUN:NPC=', this%pcfun_calls, this%updpc_calls, &
+      ', NPCF:NNR:NNF:NSR=', this%updpc_failed, &
+      this%retried_bce, this%failed_bce, this%rejected_steps
+  end subroutine write_metrics
+
+  subroutine set_verbose_stepping (this, unit)
+    class(idaesol), intent(inout) :: this
+    integer, intent(in) :: unit
+    this%unit = unit
+    this%verbose = .true.
+  end subroutine set_verbose_stepping
+
+  subroutine set_quiet_stepping (this)
+    class(idaesol), intent(inout) :: this
+    this%verbose = .false.
+  end subroutine set_quiet_stepping
 
   subroutine init (this, model, params)
 
     use parameter_list_type
   
-    class(state), intent(out) :: this
-    class(bdf2_model_evaluator), pointer, intent(in) :: model
+    class(idaesol), intent(out) :: this
+    class(idaesol_model), pointer, intent(in) :: model
     type(parameter_list) :: params
 
     integer :: maxv
@@ -179,10 +204,10 @@ contains
     INSIST(vtol > 0.0_r8)
 
     !! Initialize the NKA structure.
-    call this%accel%init (this%n, maxv)
-    call this%accel%set_vec_tol (vtol)
+    call this%nka%init (this%n, maxv)
+    call this%nka%set_vec_tol (vtol)
     
-    !call this%accel%set_dot_prod (pardp)
+    !call this%nka%set_dot_prod (pardp)
 
     !! We need to maintain 3 solution vectors for quadratic extrapolation.
     call this%uhist%init (3, this%n)
@@ -195,7 +220,7 @@ contains
  !!
 
   subroutine set_initial_state (this, t, u, udot)
-    class(state), intent(inout) :: this
+    class(idaesol), intent(inout) :: this
     real(r8), intent(in) :: t, u(:), udot(:)
     ASSERT(size(u) == this%n)
     ASSERT(size(udot) == this%n)
@@ -211,7 +236,7 @@ contains
   subroutine bdf2_step_driver (this, hnext, status, &
                                nstep, tout, hmin, hmax, mtry)
 
-    class(state), intent(inout) :: this
+    class(idaesol), intent(inout) :: this
     real(r8), intent(inout) :: hnext
     integer,  intent(out)   :: status
     integer,  intent(in) :: nstep, mtry
@@ -302,7 +327,7 @@ contains
 
   subroutine commit_state (this, t, u)
 
-    class(state), intent(inout) :: this
+    class(idaesol), intent(inout) :: this
     real(r8), intent(in) :: t, u(:)
 
     real(r8) :: h
@@ -327,7 +352,7 @@ contains
 
   subroutine bdf2_step (this, h, hmin, mtry, u, hnext, errc)
 
-    type(state), intent(inout) :: this
+    type(idaesol), intent(inout) :: this
     real(r8), intent(inout) :: h
     real(r8), intent(in)    :: hmin
     integer,  intent(in)    :: mtry
@@ -374,7 +399,7 @@ contains
 
   subroutine step (this, t, u, hnext, errc)
 
-    class(state), intent(inout) :: this
+    class(idaesol), intent(inout) :: this
     real(r8), intent(in)  :: t
     real(r8), intent(out) :: u(:)
     real(r8), intent(out) :: hnext
@@ -442,7 +467,7 @@ contains
 
       !! Solve the nonlinear BCE system.
       u = up ! Initial solution guess is the predictor.
-      call solve_bce_ain (this, t, etah, u0, u, errc)
+      call bce_step (this, t, etah, u0, u, errc)
       if (errc == 0) exit BCE ! the BCE step was successful.
 
       if (fresh_pc) then ! preconditioner was fresh; cut h and return error condition.
@@ -579,9 +604,9 @@ contains
  !!     Sci. Comput;, 19 (1998), pp. 728-765..
  !!
 
-  subroutine solve_bce_ain (this, t, h, u0, u, errc)
+  subroutine bce_step (this, t, h, u0, u, errc)
 
-    type(state), intent(inout) :: this
+    type(idaesol), intent(inout) :: this
     real(r8), intent(in)    :: t, h, u0(:)
     real(r8), intent(inout) :: u(:)
     integer,  intent(out)   :: errc
@@ -589,13 +614,12 @@ contains
     integer  :: itr
     real(r8) :: error, du(size(u))
 
-    call this%accel%restart
+    call this%nka%restart
 
     itr = 0
     do
 
-      !! Check for too many nonlinear iterations.
-      if (itr >= this%mitr) then
+      if (itr >= this%mitr) then  ! too many nonlinear iterations
         if (this%verbose) write(this%unit,fmt=1) itr, error
         errc = 1
         exit
@@ -603,26 +627,24 @@ contains
 
       itr = itr + 1
 
-      !! Evaluate the preconditioned nonlinear function.
+      !! Evaluate the nonlinear function and precondition it.
       this%pcfun_calls = this%pcfun_calls + 1
       call this%model%compute_f (t, u, (u-u0)/h, du)
       call this%model%apply_precon (t, u, du)
 
-      !! Accelerated correction.
-      call this%accel%accel_update (du)
+      !! NKA accelerated correction.
+      call this%nka%accel_update (du)
 
       !! Next solution iterate.
       u  = u - du
       
       !! Check the solution iterate for admissibility.
-!      if (present(schk)) then
-        call this%model%schk (u, 1, errc)
-        if (errc /= 0) then ! iterate is bad; bail.
-          if (this%verbose) write(this%unit,fmt=4) itr
-          errc = 2
-          exit
-        end if
-!      end if
+      call this%model%schk (u, 1, errc)
+      if (errc /= 0) then ! iterate is bad; bail.
+        if (this%verbose) write(this%unit,fmt=4) itr
+        errc = 2
+        exit
+      end if
       
       !! Error estimate.
       call this%model%du_norm(u, du, error)
@@ -637,94 +659,11 @@ contains
 
     end do
 
-    1 format(2x,'AIN BCE solve FAILED: ',i3,' iterations (max), error=',es12.5)
-    2 format(2x,'AIN BCE solve succeeded: ',i3,' iterations, error=',es12.5)
+    1 format(2x,'NLK BCE solve FAILED: ',i3,' iterations (max), error=',es12.5)
+    2 format(2x,'NLK BCE solve succeeded: ',i3,' iterations, error=',es12.5)
     3 format(2x,i3,': error=',es12.5)
-    4 format(2x,'AIN BCE solve FAILED: inadmissible solution iterate: itr=',i3)
+    4 format(2x,'NLK BCE solve FAILED: inadmissible solution iterate: itr=',i3)
 
-  end subroutine solve_bce_ain
+  end subroutine bce_step
 
-!  function pardp (a, b) result (dp)
-!    use parallel_communication, only: global_dot_product
-!    real(r8), intent(in) :: a(:), b(:)
-!    real(r8) :: dp
-!    dp = global_dot_product(a, b)
-!  end function pardp
-
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !! SET_VERBOSE_STEPPING / SET_QUIET_STEPPING
- !!
-
-  subroutine set_verbose_stepping (this, unit)
-    class(state), intent(inout) :: this
-    integer, intent(in) :: unit
-    this%unit = unit
-    this%verbose = .true.
-  end subroutine set_verbose_stepping
-
-  subroutine set_quiet_stepping (this)
-    class(state), intent(inout) :: this
-    this%verbose = .false.
-  end subroutine set_quiet_stepping
-
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !!  State inquiry procedures...
- !!
-
-  function last_time (this) result (t)
-    class(state), intent(in) :: this
-    real(r8) :: t
-    t = this%uhist%last_time()
-  end function last_time
-
-  function last_step_size (this) result (h)
-    class(state), intent(in) :: this
-    real(r8) :: h
-    h = this%hlast
-  end function last_step_size
-
-  subroutine get_interpolated_state (this, t, u, base)
-    class(state), intent(in) :: this
-    real(r8), intent(in) :: t
-    real(r8), intent(out) :: u(:)
-    integer, intent(in), optional :: base
-    call this%uhist%interp_state (t, u, base)
-  end subroutine get_interpolated_state
-
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !! WRITE_BDF2_STEPPING_STATISTICS
- !!
-
-  subroutine write_bdf2_stepping_statistics (this, unit)
-    !use parallel_communication, only: is_IOP
-    type(state), intent(in) :: this
-    integer, intent(in) :: unit
-    !if (.not.is_IOP) return
-    write(unit,fmt='(/,a,i6,a,es11.5,a,es9.3)') &
-      'STEP=', this%seq, ', T=', this%uhist%last_time(), ', H=', this%hlast
-    write(unit,fmt='(a,i7.7,":",i5.5,a,5(i4.4,:,":"))') &
-      'NFUN:NPC=', this%pcfun_calls, this%updpc_calls, &
-      ', NPCF:NNR:NNF:NSR=', this%updpc_failed, &
-      this%retried_bce, this%failed_bce, this%rejected_steps
-  end subroutine write_bdf2_stepping_statistics
-
-  subroutine bdf2_stepping_stats (this, stats)
-    type(state), intent(in) :: this
-    type(bdf2_stats), intent(out) :: stats
-    stats%tlast = this%uhist%last_time()
-    stats%hlast = this%hlast
-    stats%hmin  = this%hmin
-    stats%hmax  = this%hmax
-    stats%steps = this%seq
-    stats%pcfun_calls    = this%pcfun_calls
-    stats%updpc_calls    = this%updpc_calls
-    stats%updpc_failed   = this%updpc_failed
-    stats%retried_bce    = this%retried_bce
-    stats%failed_bce     = this%failed_bce
-    stats%rejected_steps = this%rejected_steps
-  end subroutine bdf2_stepping_stats
-
-end module bdf2_dae
+end module idaesol_type
