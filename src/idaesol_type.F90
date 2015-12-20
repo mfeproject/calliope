@@ -70,7 +70,7 @@ module idaesol_type
   contains
     procedure :: init
     procedure :: set_initial_state
-    procedure :: integrate => bdf2_step_driver
+    procedure :: integrate
     procedure :: step
     procedure :: commit_state
     procedure :: get_interpolated_state
@@ -257,7 +257,7 @@ contains
  !!  BDF2_STEP_DRIVER
  !!
 
-  subroutine bdf2_step_driver (this, hnext, status, &
+  subroutine integrate (this, hnext, status, &
                                nstep, tout, hmin, hmax, mtry)
 
     class(idaesol), intent(inout) :: this
@@ -267,8 +267,8 @@ contains
     real(r8), intent(in) :: tout, hmin, hmax
     optional :: nstep, tout, hmin, hmax, mtry
 
-    integer  :: max_step, max_try, step, errc
-    real(r8) :: tlast, h, t_out, h_min, h_max, u(this%n)
+    integer  :: max_step, max_try, step, stat
+    real(r8) :: t, tlast, h, t_out, h_min, h_max, u(this%n)
 
     ASSERT( this%seq >= 0 )
 
@@ -308,46 +308,45 @@ contains
    !!! BEGIN TIME STEPPING
 
     step = 0
-    STEP_LOOP: do
+    do
 
       h = hnext
       tlast = this%uhist%last_time()
+      t = tlast + h
 
       !! Check for a normal return before proceeding.
       if (t_out <= tlast) then
         status = SOLVED_TO_TOUT
-        exit STEP_LOOP
+        return
       end if
       if (step >= max_step) then
         status = SOLVED_TO_NSTEP
-        exit STEP_LOOP
+        return
       end if
 
       step = step + 1
 
-      call bdf2_step (this, h, h_min, max_try, u, hnext, errc)
-      if (errc /= 0) then
+      call advance (this, h_min, max_try, t, u, hnext, stat)
+      if (stat /= 0) then
         status = STEP_FAILED
-        exit STEP_LOOP   ! step failed
+        return
       end if
-
-      !! BDF2 step was successful; commit the solution.
-      call commit_state (this, tlast+h, u)
 
       !! Set the next step size.
       hnext = min(h_max, hnext)
       if (this%verbose) write(this%unit,fmt=1) hnext/h
 
-    end do STEP_LOOP
+    end do
 
     1 format(2x,'Changing H by a factor of ',f6.3)
 
-  end subroutine bdf2_step_driver
+  end subroutine integrate
 
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !! COMMIT_SOLUTION
- !!
+  !! This subroutine commits the passed state as the new current state.  The
+  !! state should be that returned by the STEP procedure.  The reason for not
+  !! having STEP automatically commit the state is for use cases where other
+  !! PDEs are being simultaneously integrated (time split).  This allows the
+  !! driving procedure control over acceptance of the overarching time step. 
 
   subroutine commit_state (this, t, u)
 
@@ -379,8 +378,8 @@ contains
   !! size. If the step size falls below HMIN, STAT returns STEP_SIZE_TOO_SMALL,
   !! and if the number of attempts exceeds MTRY, STAT returns STEP_FAILED.
   !! In these cases T and HNEXT return the time and step size that were to be
-  !! attemped.  This subroutine wraps STEP, which does the actual work, with
-  !! the strategy just outlined.
+  !! attemped.  This subroutine merely wraps STEP, which does the actual work,
+  !! with the strategy just outlined.
 
   subroutine advance (this, hmin, mtry, t, u, hnext, stat)
 
