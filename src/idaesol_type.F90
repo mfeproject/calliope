@@ -1,8 +1,34 @@
 !!
 !! IDAESOL_TYPE
 !!
+!! A solver for index-1 DAE in implicit form using the BDF2 method.
+!! This F2008 version is adapted from much earlier F77 and F95 implementations.
+!!
 !! Neil N. Carlson <neil.n.carlson@gmail.com>
 !!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!
+!! Copyright (c) 2013 Neil N. Carlson
+!!
+!! Permission is hereby granted, free of charge, to any person obtaining a
+!! copy of this software and associated documentation files (the "Software"),
+!! to deal in the Software without restriction, including without limitation
+!! the rights to use, copy, modify, merge, publish, distribute, sublicense,
+!! and/or sell copies of the Software, and to permit persons to whom the
+!! Software is furnished to do so, subject to the following conditions:
+!!
+!! The above copyright notice and this permission notice shall be included
+!! in all copies or substantial portions of the Software.
+!!
+!! THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+!! IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+!! FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+!! THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+!! LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+!! FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+!! DEALINGS IN THE SOFTWARE.
+!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 #include "f90_assert.fpp"
 
@@ -25,8 +51,8 @@ module idaesol_type
     integer  :: freeze_count = 0    ! don't increase step size for this number of steps
     integer  :: mitr = 5            ! maximum number of nonlinear iterations
     real(r8) :: ntol = 0.1_r8       ! nonlinear solver error tolerance (relative to 1)
-    type(nka) :: nka          ! nonlinear solver (AIN) accelerator structure
-    type(state_history)   :: uhist        ! solution history structure
+    type(nka) :: nka                ! nonlinear Krylov accelerator structure
+    type(state_history) :: uhist    ! solution history structure
 
     !! Perfomance counters
     integer :: pcfun_calls = 0      ! number of calls to PCFUN
@@ -63,8 +89,8 @@ module idaesol_type
     procedure(compute_f), deferred :: compute_f
     procedure(apply_precon), deferred :: apply_precon
     procedure(compute_precon), deferred :: compute_precon
-    procedure(du_norm), deferred :: du_norm 
-    procedure(schk),  deferred :: schk 
+    procedure(corr_norm), deferred :: corr_norm 
+    procedure(check_state),  deferred :: check_state 
   end type
   
   abstract interface
@@ -89,19 +115,19 @@ module idaesol_type
       class(idaesol_model) :: this
       real(r8), intent(in)  :: t, u(:), dt
     end subroutine compute_precon
-    subroutine du_norm (this, u, du, error)
+    subroutine corr_norm (this, u, du, error)
       import :: idaesol_model, r8
       class(idaesol_model) :: this
       real(r8), intent(in) :: u(:), du(:)
       real(r8), intent(out) :: error
-    end subroutine du_norm
-    subroutine schk (this, u, stage, errc)
+    end subroutine corr_norm
+    subroutine check_state (this, u, stage, errc)
       import :: idaesol_model, r8
       class(idaesol_model) :: this
       real(r8), intent(in)  :: u(:)
       integer,  intent(in)  :: stage
       integer,  intent(out) :: errc
-    end subroutine schk
+    end subroutine check_state
   end interface
 
   real(r8), parameter, private :: RMIN = 0.25_r8
@@ -179,7 +205,7 @@ contains
     use parameter_list_type
   
     class(idaesol), intent(out) :: this
-    class(idaesol_model), pointer, intent(in) :: model
+    class(idaesol_model), intent(in), target :: model
     type(parameter_list) :: params
 
     integer :: maxv
@@ -190,25 +216,23 @@ contains
     this%n = model%size()
     INSIST(this%n > 0)
 
-    call params%get ('NLK_max_iterations', this%mitr, default=5)
+    call params%get ('nlk-max-iter', this%mitr, default=5)
     INSIST(this%mitr > 1)
 
-    call params%get ('NLK_tolerance', this%ntol, default=0.1_r8)
+    call params%get ('nlk-tol', this%ntol, default=0.1_r8)
     INSIST(this%ntol > 0.0_r8 .and. this%ntol <= 1.0_r8)
 
-    call params%get ('NKA_max_vectors', maxv, default=this%mitr-1)
+    call params%get ('nlk-max-vec', maxv, default=this%mitr-1)
     INSIST(maxv > 0)
     maxv = min(maxv, this%mitr-1)
     
-    call params%get ('NKA_vector_tolerance', vtol, default=0.01_r8)
+    call params%get ('nlk-vec-tol', vtol, default=0.01_r8)
     INSIST(vtol > 0.0_r8)
 
     !! Initialize the NKA structure.
     call this%nka%init (this%n, maxv)
     call this%nka%set_vec_tol (vtol)
     
-    !call this%nka%set_dot_prod (pardp)
-
     !! We need to maintain 3 solution vectors for quadratic extrapolation.
     call this%uhist%init (3, this%n)
 
@@ -345,65 +369,80 @@ contains
 
   end subroutine commit_state
 
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !! BDF2_STEP
- !!
+  !! This auxiliary subroutine advances the state by a single time step.  The
+  !! target time for the step is T, but in the case of failure, the step size
+  !! will be repeatedly reduced until a successful step is achieved, or the
+  !! step size falls below HMIN, or the number of attempts exceeds MTRY.  If
+  !! successful (STAT==0), the solution and time are committed as the current
+  !! state, and also returned in U and T.  Note that the returned value of T
+  !! may differ from its input value.  HNEXT returns the requested next step
+  !! size. If the step size falls below HMIN, STAT returns STEP_SIZE_TOO_SMALL,
+  !! and if the number of attempts exceeds MTRY, STAT returns STEP_FAILED.
+  !! In these cases T and HNEXT return the time and step size that were to be
+  !! attemped.  This subroutine wraps STEP, which does the actual work, with
+  !! the strategy just outlined.
 
-  subroutine bdf2_step (this, h, hmin, mtry, u, hnext, errc)
+  subroutine advance (this, hmin, mtry, t, u, hnext, stat)
 
     type(idaesol), intent(inout) :: this
-    real(r8), intent(inout) :: h
     real(r8), intent(in)    :: hmin
     integer,  intent(in)    :: mtry
+    real(r8), intent(inout) :: t
     real(r8), intent(out)   :: u(:), hnext
-    integer,  intent(out)   :: errc
+    integer,  intent(out)   :: stat
     
     integer :: try
+    real(r8) :: h
 
-    errc = 0
-    if (hmin < 0.0_r8 .or. h < hmin) errc = BAD_INPUT
-    if (mtry < 1) errc = BAD_INPUT
-    if (errc == BAD_INPUT) return
-
-    try = 0
-    do
-      try = try + 1
-
-      !! Check for too many attempts at a single step.
-      if (try > mtry) then
-        errc  = STEP_FAILED
-        exit
-      end if
-
+    do try = 1, mtry
       !! Check for a too-small step size.
+      h = t - this%uhist%last_time()
       if (h < hmin) then
-        errc  = STEP_SIZE_TOO_SMALL
-        exit
+        hnext = h
+        stat = STEP_SIZE_TOO_SMALL
+        return
       end if
 
       !! Attempt a BDF2 step.
-      call step (this, this%uhist%last_time()+h, u, hnext, errc)
-      !call step (this, h, u, hnext, errc)
-      if (errc == 0) exit
-
-      !! Step failed; try again with the suggested step size.
-      if (this%verbose) write(this%unit,fmt=1) hnext/h
-      h = hnext
-
+      call step (this, t, u, hnext, stat)
+      if (stat == 0) then
+        call commit_state (this, t, u)
+        return
+      else
+        !! Step failed; try again with the suggested step size.
+        if (this%verbose) write(this%unit,fmt=1) hnext/h
+        t = this%uhist%last_time() + hnext
+      end if
     end do
+    
+    stat = STEP_FAILED
 
     1 format(2x,'Changing H by a factor of ',f6.3)
 
-  end subroutine bdf2_step
+  end subroutine advance
 
-  subroutine step (this, t, u, hnext, errc)
+  !! Starting from the current state, this subroutine takes a single step to
+  !! compute the solution at time T.  If successful (STAT==0), the advanced
+  !! solution is returned in U, and HNEXT returns the next step size to use.
+  !! Note that this does not advance the current state; COMMIT_STATE must be
+  !! called with the computed solution to advance the state.  Normally a BDF2
+  !! step is taken, except at the start of integration when insufficient state
+  !! history is available and a BDF1 step is taken instead.  This subroutine
+  !! manages the update of the preconditioner, and will retry a failed step
+  !! with a fresh preconditioner as needed.  If the specified step to T is
+  !! ultimately unsuccessful, STAT returns a nonzero value and HNEXT returns
+  !! a (reduced) step size to attempt next.  Failure can occur for several
+  !! reasons: failure to solve the nonlinear system (STAT==1), predictor
+  !! error exceeded tolerance (STAT==2), and inadmissable predicted solution
+  !! (STAT==3).
+
+  subroutine step (this, t, u, hnext, stat)
 
     class(idaesol), intent(inout) :: this
     real(r8), intent(in)  :: t
     real(r8), intent(out) :: u(:)
     real(r8), intent(out) :: hnext
-    integer,  intent(out) :: errc
+    integer,  intent(out) :: stat
 
     real(r8) :: eta, etah, h, t0, tlast, perr, dt(3)
     real(r8) :: u0(size(u)), up(size(u))
@@ -433,14 +472,14 @@ contains
     end if
     
     !! Check the predicted solution for admissibility.
-    call this%model%schk (up, 0, errc)
-    if (errc /= 0) then ! it's bad; cut h and retry.
+    call this%model%check_state (up, 0, stat)
+    if (stat /= 0) then ! it's bad; cut h and retry.
       this%rejected_steps = this%rejected_steps + 1
       if (this%verbose) write(this%unit,fmt=7)
       hnext = 0.25_r8 * h
       this%freeze_count = 1
       this%usable_pc = .false.
-      errc = 3
+      stat = 3
       return
     end if
 
@@ -467,11 +506,11 @@ contains
 
       !! Solve the nonlinear BCE system.
       u = up ! Initial solution guess is the predictor.
-      call bce_step (this, t, etah, u0, u, errc)
-      if (errc == 0) exit BCE ! the BCE step was successful.
+      call bce_step (this, t, etah, u0, u, stat)
+      if (stat == 0) exit BCE ! the BCE step was successful.
 
       if (fresh_pc) then ! preconditioner was fresh; cut h and return error condition.
-        if (errc == 2) then ! inadmissible iterate generated
+        if (stat == 2) then ! inadmissible iterate generated
           this%rejected_steps = this%rejected_steps + 1
           hnext = 0.25_r8 * h
           this%freeze_count = 1
@@ -481,7 +520,7 @@ contains
           hnext = 0.5_r8 * h
           this%freeze_count = 2
         end if
-        errc = 1
+        stat = 1
         return
       else ! update the preconditioner and retry the nonlinear solve.
         this%retried_bce = this%retried_bce + 1
@@ -497,16 +536,16 @@ contains
 
       !! Predictor error control.
       u0 = u - up
-      call this%model%du_norm (u, u0, perr)
+      call this%model%corr_norm (u, u0, perr)
       if (perr < 4.0_r8) then ! accept the step.
         if (this%verbose) write(this%unit,fmt=4) perr
-        errc = 0
+        stat = 0
       else ! reject the step; cut h and return error condition.
         this%rejected_steps = this%rejected_steps + 1
         if (this%verbose) write(this%unit,fmt=5) perr
         hnext = 0.5_r8 * h
         this%freeze_count = 1
-        errc = 2
+        stat = 2
         return
       end if
 
@@ -522,7 +561,7 @@ contains
 
       if (this%verbose) write(this%unit,fmt=6)
       hnext = h
-      errc = 0
+      stat = 0
 
     end if
 
@@ -535,10 +574,13 @@ contains
 
   end subroutine step
 
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !!  SELECT_STEP_SIZE -- Choose a new time step.
- !!
+  !! This subroutine selects the next step size based on the predictor error
+  !! for the current step and the recent history of step sizes. The step size
+  !! is chosen so that the estimated predictor error on the next step is 1/2.
+  !! Recall that the correction norm computed by the model is a scaled norm
+  !! with value 1 separating 'small' from 'large'. See [1] for a description
+  !! of the scheme, which leads to a problem of finding the root of a third
+  !! order polynomial that is solved here using Newton iteration.
 
   subroutine select_step_size (dt, perr, h)
 
@@ -548,68 +590,51 @@ contains
     real(r8), parameter :: tol = 0.001_r8
     real(r8) :: a, dh, phi, dphi
 
-    ASSERT( size(dt) == 3 )
+    ASSERT(size(dt) == 3)
 
     a = 0.5_r8*dt(1)*dt(2)*dt(3)/max(perr,0.001_r8)
     h = dt(1)
-
-    do ! until converged -- DANGEROUS!
-
+    do ! until converged
       phi  = h*(h + dt(1))*(h + dt(2)) - a
       dphi = (2.0_r8*h + dt(1))*(h + dt(2)) + h*(h + dt(1))
-
       dh = phi / dphi
       h = h - dh
       if (abs(dh) / h < tol) exit
-
     end do
 
   end subroutine select_step_size
 
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !! SOLVE_BCE_AIN -- Solve the Backward Cauchy-Euler system using AIN.
- !!
- !! The backward Cauchy-Euler (BCE) method applied to the implicit DAE
- !!
- !!     f(t,u,u') = 0
- !!
- !! yields a nonlinear system of equations for advancing the solution from a
- !! given state u0 at time t - h to the unknown solution u at time t,
- !!
- !!     f(t,u,(u-u0)/h) = 0.
- !!
- !! This subroutine solves this nonlinear system using an accelerated fixed
- !! point iteration [1] for the preconditioned system
- !! g(u) = pc(f(t,u,(u-u0)/h)) = 0:
- !!
- !!    u given
- !!    Do until converged:
- !!      du <-- g(u)
- !!      du <-- NKA(du)
- !!      u  <-- u - du
- !!    End do
- !!
- !! The procedure NKA uses information about g' gleaned from the unaccelerated
- !! correction du=g(u) and previous g values to compute an improved correction.
- !! The preconditioning function pc() is typically an approximate solution
- !! of the Newton correction equation  J*du = f(t,u,(u-u0)/h) where J is an
- !! approximation to the Jacobian of f(t,u,(u-u0)/h) as a function of u.  Thus
- !! this method can be regarded as an accelerated inexact Newton (AIN) method.
- !!
- !! The dummy procedure PCFUN evaluates the preconditioned function g.
- !!
- !! [1] N.N.Carlson and K.Miller, "Design and application of a gradient-
- !!     weighted moving finite element code I: in one dimension", SIAM J.
- !!     Sci. Comput;, 19 (1998), pp. 728-765..
- !!
+  !! The backward Cauchy-Euler (BCE) method applied to the implicit DAE
+  !! f(t,u,u') = 0 yields the nonlinear system f(t,u,(u-u0)/h) = 0 for
+  !! advancing the solution from a given state u0 at time t - h to the
+  !! unknown state u at time t. This subroutine solves that nonlinear system
+  !! using an accelerated fixed point iteration [1] for the preconditioned
+  !! system g(u) = pc(f(t,u,(u-u0)/h)) = 0:
+  !!
+  !!    u given
+  !!    do until converged:
+  !!      du <-- g(u)
+  !!      du <-- NKA(du)
+  !!      u  <-- u - du
+  !!    end do
+  !!
+  !! The nonlinear Krylov acceleration (NKA) procedure uses information about
+  !! g' gleaned from the unaccelerated correction du=g(u) and previous g
+  !! values to compute an improved correction.  The preconditioning function
+  !! pc() is typically an approximate solution of the Newton correction
+  !! equation J*du = f(t,u,(u-u0)/h) where J is an approximation to the
+  !! Jacobian of f(t,u,(u-u0)/h) as a function of u.
+  !!
+  !! [1] N.N.Carlson and K.Miller, "Design and application of a gradient-
+  !!     weighted moving finite element code I: in one dimension", SIAM J.
+  !!     Sci. Comput;, 19 (1998), pp. 728-765..
 
-  subroutine bce_step (this, t, h, u0, u, errc)
+  subroutine bce_step (this, t, h, u0, u, stat)
 
     type(idaesol), intent(inout) :: this
     real(r8), intent(in)    :: t, h, u0(:)
     real(r8), intent(inout) :: u(:)
-    integer,  intent(out)   :: errc
+    integer,  intent(out)   :: stat
 
     integer  :: itr
     real(r8) :: error, du(size(u))
@@ -621,7 +646,7 @@ contains
 
       if (itr >= this%mitr) then  ! too many nonlinear iterations
         if (this%verbose) write(this%unit,fmt=1) itr, error
-        errc = 1
+        stat = 1
         exit
       end if
 
@@ -639,21 +664,21 @@ contains
       u  = u - du
       
       !! Check the solution iterate for admissibility.
-      call this%model%schk (u, 1, errc)
-      if (errc /= 0) then ! iterate is bad; bail.
+      call this%model%check_state (u, 1, stat)
+      if (stat /= 0) then ! iterate is bad; bail.
         if (this%verbose) write(this%unit,fmt=4) itr
-        errc = 2
+        stat = 2
         exit
       end if
       
       !! Error estimate.
-      call this%model%du_norm(u, du, error)
+      call this%model%corr_norm(u, du, error)
       if (this%verbose) write(this%unit,fmt=3) itr, error
 
       !! Check for convergence.
       if (((error < this%ntol) .and. (itr > 1)) .or. (error < 0.01_r8 * this%ntol)) then
         if (this%verbose) write(this%unit,fmt=2) itr, error
-        errc = 0
+        stat = 0
         exit
       end if
 

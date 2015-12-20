@@ -26,8 +26,8 @@ program main
   prob%atol = 1.0d-5
   
   !call s%create (bdf2_prob, size(u), mvec=2, ntol=0.01d0)
-  call bdf_params%set ('NLK_tolerance', 0.01d0)
-  call bdf_params%set ('NKA_max_vectors', 5)
+  call bdf_params%set ('nlk-tol', 0.01d0)
+  call bdf_params%set ('nlk-max-vec', 5)
   call s%init (bdf2_prob, bdf_params)
   
   u = sin(4.0_r8*atan(1.0_r8)*prob%x)

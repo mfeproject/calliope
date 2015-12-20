@@ -22,8 +22,8 @@ module nodal_FEM_1D
     procedure :: compute_f
     procedure :: apply_precon
     procedure :: compute_precon
-    procedure :: du_norm
-    procedure :: schk
+    procedure :: corr_norm
+    procedure :: check_state
     procedure :: udot
     procedure :: user
   end type
@@ -35,13 +35,13 @@ contains
     model_size = this%n
   end function model_size
 
-  subroutine schk (this, u, stage, errc)
+  subroutine check_state (this, u, stage, errc)
     class(ht_model) :: this
     real(r8), intent(in)  :: u(:)
     integer,  intent(in)  :: stage
     integer,  intent(out) :: errc
     errc = 0
-  end subroutine schk
+  end subroutine check_state
 
   subroutine init_simple (this, nnode, x0, x1, u0, u1, pnum)
   
@@ -276,11 +276,11 @@ contains
     print '(2es13.5)', (this%x(j), u(j), j=1,this%n)
   end subroutine user
   
-  subroutine du_norm (this, u, du, error)
+  subroutine corr_norm (this, u, du, error)
     class(ht_model) :: this
     real(r8), intent(in) :: u(:), du(:)
     real(r8), intent(out) :: error
     error = maxval(abs(du)/(this%atol + this%rtol*abs(u)))
-  end subroutine du_norm
+  end subroutine corr_norm
   
 end module nodal_FEM_1D
