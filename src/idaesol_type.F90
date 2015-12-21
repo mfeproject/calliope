@@ -42,7 +42,7 @@ module idaesol_type
 
   type, public :: idaesol
     private
-    class(idaesol_model), pointer :: model => null()
+    class(idaesol_model), pointer :: model => null()  ! reference only -- do not own
     integer  :: n                   ! number of unknowns
     integer  :: seq = -1            ! number of steps taken
     real(r8) :: hlast               ! last step size
@@ -55,7 +55,7 @@ module idaesol_type
     type(state_history) :: uhist    ! solution history structure
 
     !! Perfomance counters
-    integer :: pcfun_calls = 0      ! number of calls to PCFUN
+    integer :: pcfun_calls = 0      ! number of function/procon calls to PCFUN
     integer :: updpc_calls = 0      ! number of calls to UPDPC
     integer :: updpc_failed = 0     ! number of UPDPC calls returning an error
     integer :: retried_bce = 0      ! number of retried BCE steps
@@ -82,17 +82,17 @@ module idaesol_type
     procedure :: set_quiet_stepping
     procedure :: write_metrics
   end type idaesol
-  
+
   type, abstract, public :: idaesol_model
   contains
     procedure(model_size), deferred :: size
     procedure(compute_f), deferred :: compute_f
     procedure(apply_precon), deferred :: apply_precon
     procedure(compute_precon), deferred :: compute_precon
-    procedure(corr_norm), deferred :: corr_norm 
-    procedure(check_state),  deferred :: check_state 
+    procedure(corr_norm), deferred :: corr_norm
+    procedure(check_state),  deferred :: check_state
   end type
-  
+
   abstract interface
     integer function model_size (this)
       import idaesol_model
@@ -142,32 +142,43 @@ module idaesol_type
   integer, parameter, public :: BAD_INPUT = -1
   integer, parameter, public :: STEP_FAILED = -2
   integer, parameter, public :: STEP_SIZE_TOO_SMALL = -3
-  
+
 contains
 
+  !! Return a pointer to the current system state.
   subroutine get_last_state_view (this, view)
     class(idaesol), intent(in) :: this
     real(r8), pointer, intent(out) :: view(:)
     call this%uhist%get_last_state_view (view)
   end subroutine get_last_state_view
 
+  !! Return a copy of the current system state.
   subroutine get_last_state_copy (this, copy)
     class(idaesol), intent(in) :: this
     real(r8), intent(out) :: copy(:)
     call this%uhist%get_last_state_copy (copy)
   end subroutine get_last_state_copy
 
+  !! Return the current system time.
   function last_time (this) result (t)
     class(idaesol), intent(in) :: this
     real(r8) :: t
     t = this%uhist%last_time()
   end function last_time
 
+  !! Return the last time step size used (successfully).
   function last_step_size (this) result (h)
     class(idaesol), intent(in) :: this
     real(r8) :: h
     h = this%hlast
   end function last_step_size
+
+  !! Computes the interpolated system state vector at time T.  The specified
+  !! time should generally be contained in the interval between the current
+  !! time and the previous time.  Typically the array U would have the same
+  !! size as the system state vector, but more generally U may return any
+  !! contiguous segment of the interpolated state starting at index FIRST
+  !! (default 1) and length the size of U.
 
   subroutine get_interpolated_state (this, t, u, first)
     class(idaesol), intent(in) :: this
@@ -180,9 +191,9 @@ contains
   subroutine write_metrics (this, unit)
     class(idaesol), intent(in) :: this
     integer, intent(in) :: unit
-    write(unit,fmt='(/,a,i6,a,es11.5,a,es9.3)') &
+    write(unit,fmt='(/,a,i0,a,g0.5,a,g0.5)') &
       'STEP=', this%seq, ', T=', this%uhist%last_time(), ', H=', this%hlast
-    write(unit,fmt='(a,i7.7,":",i5.5,a,5(i4.4,:,":"))') &
+    write(unit,fmt='(a,i0,":",i0,a,5(i0,:,":"))') &
       'NFUN:NPC=', this%pcfun_calls, this%updpc_calls, &
       ', NPCF:NNR:NNF:NSR=', this%updpc_failed, &
       this%retried_bce, this%failed_bce, this%rejected_steps
@@ -203,14 +214,14 @@ contains
   subroutine init (this, model, params)
 
     use parameter_list_type
-  
+
     class(idaesol), intent(out) :: this
     class(idaesol_model), intent(in), target :: model
     type(parameter_list) :: params
 
     integer :: maxv
     real(r8) :: vtol
-    
+
     this%model => model
 
     this%n = model%size()
@@ -225,23 +236,23 @@ contains
     call params%get ('nlk-max-vec', maxv, default=this%mitr-1)
     INSIST(maxv > 0)
     maxv = min(maxv, this%mitr-1)
-    
+
     call params%get ('nlk-vec-tol', vtol, default=0.01_r8)
     INSIST(vtol > 0.0_r8)
 
     !! Initialize the NKA structure.
     call this%nka%init (this%n, maxv)
     call this%nka%set_vec_tol (vtol)
-    
+
     !! We need to maintain 3 solution vectors for quadratic extrapolation.
     call this%uhist%init (3, this%n)
 
   end subroutine init
 
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !! SET_INITIAL_STATE
- !!
+  !! Sets the initial state (t, u, du/dt) of the DAE system.  This must be
+  !! called before beginning integration.  It is important that the passed
+  !! state satisfy the DAE, f(t,u,du/dt) = 0.  This is trivial for explicit
+  !! DE, du/dt = f(t,u), but is often not for DAEs.
 
   subroutine set_initial_state (this, t, u, udot)
     class(idaesol), intent(inout) :: this
@@ -249,16 +260,22 @@ contains
     ASSERT(size(u) == this%n)
     ASSERT(size(udot) == this%n)
     call this%uhist%flush (t, u, udot)
-    this%seq  = 0
+    this%seq = 0
   end subroutine set_initial_state
 
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !!  BDF2_STEP_DRIVER
- !!
+  !! This driver subroutine integrates the system through multiple steps until
+  !! one of several events occur: the specified number of steps NSTEP have been
+  !! taken, the integration time has passed the target time TOUT, or a step can
+  !! not be taken that satisfies accuracy requirements or other conditions.  By
+  !! default the number of steps and target time are unlimited, but at least
+  !! one must be specified.  The time step size is constrained to the interval
+  !! [HMIN,HMAX].  A step failure occurs if the step size falls below HMIN. The
+  !! default for HMIN is the smallest postive real (tiny()), and the default
+  !! for HMAX is the largest postive real (huge()).  At most MTRY attempts to
+  !! take a step are allowed before a step failure occurs; the default is 10.
 
   subroutine integrate (this, hnext, status, &
-                               nstep, tout, hmin, hmax, mtry)
+                        nstep, tout, hmin, hmax, mtry)
 
     class(idaesol), intent(inout) :: this
     real(r8), intent(inout) :: hnext
@@ -270,12 +287,7 @@ contains
     integer  :: max_step, max_try, step, stat
     real(r8) :: t, tlast, h, t_out, h_min, h_max, u(this%n)
 
-    ASSERT( this%seq >= 0 )
-
-   !!!
-   !!! PROCESS THE INPUT AND CHECK IT FOR CORRECTNESS
-
-   ! status = 0
+    ASSERT(this%seq >= 0)
 
     !! Set the maximum number of time steps; default is unlimited.
     max_step = huge(1)
@@ -303,9 +315,6 @@ contains
     if (max_try < 1) status = BAD_INPUT
 
     if (status == BAD_INPUT) return
-
-   !!!
-   !!! BEGIN TIME STEPPING
 
     step = 0
     do
@@ -342,32 +351,6 @@ contains
 
   end subroutine integrate
 
-  !! This subroutine commits the passed state as the new current state.  The
-  !! state should be that returned by the STEP procedure.  The reason for not
-  !! having STEP automatically commit the state is for use cases where other
-  !! PDEs are being simultaneously integrated (time split).  This allows the
-  !! driving procedure control over acceptance of the overarching time step. 
-
-  subroutine commit_state (this, t, u)
-
-    class(idaesol), intent(inout) :: this
-    real(r8), intent(in) :: t, u(:)
-
-    real(r8) :: h
-
-    h = t - this%uhist%last_time()
-    ASSERT(h > 0.0_r8)
-    call this%uhist%record_state (t, u)
-
-    this%hlast = h
-    this%seq = this%seq + 1
-    this%freeze_count = max(0, this%freeze_count - 1)
-
-    this%hmin = min(h, this%hmin)
-    this%hmax = max(h, this%hmax)
-
-  end subroutine commit_state
-
   !! This auxiliary subroutine advances the state by a single time step.  The
   !! target time for the step is T, but in the case of failure, the step size
   !! will be repeatedly reduced until a successful step is achieved, or the
@@ -389,7 +372,7 @@ contains
     real(r8), intent(inout) :: t
     real(r8), intent(out)   :: u(:), hnext
     integer,  intent(out)   :: stat
-    
+
     integer :: try
     real(r8) :: h
 
@@ -404,21 +387,46 @@ contains
 
       !! Attempt a BDF2 step.
       call step (this, t, u, hnext, stat)
-      if (stat == 0) then
+      if (stat == 0) then ! successful
         call commit_state (this, t, u)
         return
-      else
-        !! Step failed; try again with the suggested step size.
+      else  ! failed; try again with the suggested step size.
         if (this%verbose) write(this%unit,fmt=1) hnext/h
         t = this%uhist%last_time() + hnext
       end if
     end do
-    
+
     stat = STEP_FAILED
 
     1 format(2x,'Changing H by a factor of ',f6.3)
 
   end subroutine advance
+
+  !! This subroutine commits the passed state as the new current state.  The
+  !! state should be that returned by the STEP procedure.  The reason for not
+  !! having STEP automatically commit the state is for use cases where other
+  !! PDEs are being simultaneously integrated (time split).  This allows the
+  !! driving procedure control over acceptance of the overarching time step.
+
+  subroutine commit_state (this, t, u)
+
+    class(idaesol), intent(inout) :: this
+    real(r8), intent(in) :: t, u(:)
+
+    real(r8) :: h
+
+    h = t - this%uhist%last_time()
+    ASSERT(h > 0.0_r8)
+    call this%uhist%record_state (t, u)
+
+    this%hlast = h
+    this%seq = this%seq + 1
+    this%freeze_count = max(0, this%freeze_count - 1)
+
+    this%hmin = min(h, this%hmin)
+    this%hmax = max(h, this%hmax)
+
+  end subroutine commit_state
 
   !! Starting from the current state, this subroutine takes a single step to
   !! compute the solution at time T.  If successful (STAT==0), the advanced
@@ -469,7 +477,7 @@ contains
       call this%uhist%interp_state (t,  up, order=2)
       call this%uhist%interp_state (t0, u0, order=1)
     end if
-    
+
     !! Check the predicted solution for admissibility.
     call this%model%check_state (up, 0, stat)
     if (stat /= 0) then ! it's bad; cut h and retry.
@@ -660,8 +668,8 @@ contains
       call this%nka%accel_update (du)
 
       !! Next solution iterate.
-      u  = u - du
-      
+      u = u - du
+
       !! Check the solution iterate for admissibility.
       call this%model%check_state (u, 1, stat)
       if (stat /= 0) then ! iterate is bad; bail.
@@ -669,9 +677,9 @@ contains
         stat = 2
         exit
       end if
-      
+
       !! Error estimate.
-      call this%model%corr_norm(u, du, error)
+      call this%model%corr_norm (u, du, error)
       if (this%verbose) write(this%unit,fmt=3) itr, error
 
       !! Check for convergence.
