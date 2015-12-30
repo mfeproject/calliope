@@ -2,8 +2,31 @@ project(CalliopeLib)
 
 include_directories(${Petaca_BINARY_DIR}/mod_files)
 
-add_library(calliope kinds.F90 idaesol_type.F90 nka_type.F90 kinds.F90)
+add_library(calliope kinds.F90 idaesol_type.F90 nka_type.F90 kinds.F90
+  mfe_model_type.F90
+  kindpar.f90
+  mfeconst.f90
+  mfetypes.f90
+  mfedata.f90
+  mfeprocs.f90
+  locmfeprocs.f90
+  locglb.f90
+  locarray.f90
+  locmfe.f90
+  problem.f90
+  loclapl.f90
+  bc.f90
+  blssolve.f90
+  comio.f90
+  norm.f90
+  output.f90
+  init.f90
+  )
+
 target_link_libraries(calliope petaca)
+
+add_executable(gas mfe1.f90)
+target_link_libraries(gas calliope)
 
 ## # Create all the Fortran module files in a directory at the root build directory
 ## SET(Calliope_MODULE_DIR ${Calliope_BINARY_DIR}/mod_files/)

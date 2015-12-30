@@ -81,6 +81,7 @@ module idaesol_type
     procedure :: set_verbose_stepping
     procedure :: set_quiet_stepping
     procedure :: write_metrics
+    procedure :: get_metrics
   end type idaesol
 
   type, abstract, public :: idaesol_model
@@ -110,10 +111,10 @@ module idaesol_type
       real(r8), intent(in) :: t, u(:)
       real(r8), intent(inout) :: f(:)
     end subroutine apply_precon
-    subroutine compute_precon (this, t, u, dt)
+    subroutine compute_precon (this, t, u, udot, dt)
       import idaesol_model, r8
       class(idaesol_model) :: this
-      real(r8), intent(in)  :: t, u(:), dt
+      real(r8), intent(in) :: t, u(:), udot(:), dt
     end subroutine compute_precon
     subroutine corr_norm (this, u, du, error)
       import :: idaesol_model, r8
@@ -121,12 +122,12 @@ module idaesol_type
       real(r8), intent(in) :: u(:), du(:)
       real(r8), intent(out) :: error
     end subroutine corr_norm
-    subroutine check_state (this, u, stage, errc)
+    subroutine check_state (this, u, stage, stat)
       import :: idaesol_model, r8
       class(idaesol_model) :: this
       real(r8), intent(in)  :: u(:)
       integer,  intent(in)  :: stage
-      integer,  intent(out) :: errc
+      integer,  intent(out) :: stat
     end subroutine check_state
   end interface
 
@@ -198,6 +199,24 @@ contains
       ', NPCF:NNR:NNF:NSR=', this%updpc_failed, &
       this%retried_bce, this%failed_bce, this%rejected_steps
   end subroutine write_metrics
+  
+  subroutine get_metrics (this, nstep, hmin, hmax, counters)
+    class(idaesol), intent(in) :: this
+    integer, intent(out), optional :: nstep, counters(:)
+    real(r8), intent(out), optional :: hmin, hmax
+    if (present(nstep)) nstep = this%seq
+    if (present(hmin)) hmin = this%hmin
+    if (present(hmax)) hmax = this%hmax
+    if (present(counters)) then
+      ASSERT(size(counters) == 6)
+      counters(1) = this%pcfun_calls
+      counters(2) = this%updpc_calls
+      counters(3) = this%updpc_failed
+      counters(4) = this%retried_bce
+      counters(5) = this%failed_bce
+      counters(6) = this%rejected_steps
+    end if
+  end subroutine get_metrics
 
   subroutine set_verbose_stepping (this, unit)
     class(idaesol), intent(inout) :: this
@@ -461,6 +480,16 @@ contains
     tlast = this%uhist%last_time()
     h = t - tlast
     INSIST(h > 0)
+    
+    if (this%uhist%depth() == 2) then ! trapezoid step to bootstrap
+      call trap_step (this, t, u, stat)
+      if (stat /= 0) then
+        hnext = 0.1_r8 * h
+      else
+        hnext = h
+      end if
+      return
+    end if
 
     if (this%verbose) write(this%unit,fmt=1) this%seq+1, tlast, h
 
@@ -504,7 +533,7 @@ contains
       !! Update the preconditioner if necessary.
       if (.not.this%usable_pc) then
         this%updpc_calls = this%updpc_calls + 1
-        call this%model%compute_precon (t, up, etah)
+        call this%model%compute_precon (t, up, (up-u0)/etah, etah)
         if (this%verbose) write(this%unit,fmt=3) t
         this%hpc = etah
         this%usable_pc = .true.
@@ -537,7 +566,7 @@ contains
 
     end do BCE
 
-    predictor_error = (this%seq >= 3)
+    predictor_error = (this%seq >= 2)
 
     if (predictor_error) then
 
@@ -610,6 +639,58 @@ contains
     end do
 
   end subroutine select_step_size
+  
+  subroutine trap_step (this, t, u, stat)
+  
+    class(idaesol), intent(inout) :: this
+    real(r8), intent(in)  :: t
+    real(r8), intent(out) :: u(:)
+    integer,  intent(out) :: stat
+    
+    real(r8) :: tlast, t0, h, etah, u0(this%n)
+    
+    tlast = this%uhist%last_time()
+    h = t - tlast
+    etah = 0.5_r8 * h
+    t0 = tlast + etah
+
+    if (this%verbose) write(this%unit,fmt=1) this%seq+1, tlast, h
+    
+    call this%uhist%interp_state (t,  u,  order=1)
+    call this%uhist%interp_state (t0, u0, order=1)
+    
+    !! Check the predicted solution for admissibility.
+    call this%model%check_state (u, 0, stat)
+    if (stat /= 0) then ! it's bad; cut h and retry.
+      this%rejected_steps = this%rejected_steps + 1
+      if (this%verbose) write(this%unit,fmt=7)
+      stat = 3
+      return
+    end if
+    
+    !! Update the preconditioner.
+    this%updpc_calls = this%updpc_calls + 1
+    call this%model%compute_precon (t, u, (u-u0)/etah, etah)
+    if (this%verbose) write(this%unit,fmt=3) t
+    this%hpc = etah
+
+    !! Solve the nonlinear BCE system.
+    call bce_step (this, t, etah, u0, u, stat)
+    if (stat /= 0) then
+      this%failed_bce = this%failed_bce + 1
+      this%freeze_count = 1
+      stat = 1
+    else
+      if (this%verbose) write(this%unit,fmt=6)
+      stat = 0
+    end if
+    
+    1 format(/,'TRAP step ',i6,': T=',es12.5,', H=',es12.5)
+    3 format(2x,'Preconditioner updated at T=',es12.5)
+    6 format(2x,'Step accepted: no local error control')
+    7 format(2x,'Step REJECTED: inadmissible predicted solution')
+      
+  end subroutine trap_step
 
   !! The backward Cauchy-Euler (BCE) method applied to the implicit DAE
   !! f(t,u,u') = 0 yields the nonlinear system f(t,u,(u-u0)/h) = 0 for

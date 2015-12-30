@@ -35,12 +35,12 @@ contains
     model_size = this%n
   end function model_size
 
-  subroutine check_state (this, u, stage, errc)
+  subroutine check_state (this, u, stage, stat)
     class(ht_model) :: this
     real(r8), intent(in)  :: u(:)
     integer,  intent(in)  :: stage
-    integer,  intent(out) :: errc
-    errc = 0
+    integer,  intent(out) :: stat
+    stat = 0
   end subroutine check_state
 
   subroutine init_simple (this, nnode, x0, x1, u0, u1, pnum)
@@ -117,6 +117,10 @@ contains
       m(1,j+1) = dx(j)/6.0_r8
       m(2,j+1) = dx(j)/3.0_r8
     end do
+    
+    ! initialize unused elements
+    m(1,1) = 0.0_r8
+    m(3,size(dx)+1) = 0.0_r8
     
   end subroutine eval_mass_matrix
   
@@ -230,10 +234,10 @@ contains
       
   end function udot
   
-  subroutine compute_precon (this, t, u, dt)
+  subroutine compute_precon (this, t, u, udot, dt)
   
     class(ht_model) :: this
-    real(r8), intent(in) :: t, u(:), dt
+    real(r8), intent(in) :: t, u(:), udot(:), dt
     
     integer :: n, j
     real(r8) :: a(this%n-1), tmp
