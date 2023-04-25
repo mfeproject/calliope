@@ -1,23 +1,22 @@
-cmake_minimum_required(VERSION 2.8.12)
+cmake_minimum_required(VERSION 3.20.2)
 
-project(Calliope Fortran)
+set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
-## # Create all the Fortran module files in a directory at the root build directory
-## SET(Calliope_MODULE_DIR ${Calliope_BINARY_DIR}/mod_files/)
-## SET(CMAKE_Fortran_MODULE_DIRECTORY ${Calliope_MODULE_DIR})
+project(Calliope Fortran C)
 
-# Default is an debug build
-SET(CMAKE_BUILD_TYPE DEBUG CACHE STRING "Build type")
+find_package(PETACA REQUIRED)
 
-### Set the default Fortran compiler flags (CMake doesn't do this for Fortran)
-IF(CMAKE_Fortran_COMPILER_ID MATCHES NAG)
-  SET(CMAKE_Fortran_FLAGS_RELEASE "-u -O3 -w=uda -DNDEBUG")
-  SET(CMAKE_Fortran_FLAGS_DEBUG   "-u -g90 -gline -C=all -nan")
-ELSEIF(CMAKE_Fortran_COMPILER_ID MATCHES "Intel")
-  SET(CMAKE_Fortran_FLAGS_RELEASE "-u -O3 -DNDEBUG")
-  SET(CMAKE_Fortran_FLAGS_DEBUG   "-u -g")
-ENDIF()
+### Set the default Fortran compiler flags for NAG (CMake doesn't)
+if(CMAKE_Fortran_COMPILER_ID MATCHES NAG)
+  set(CMAKE_Fortran_FLAGS_DEBUG "-u -O0 -g -gline -C=all -nan")
+  set(CMAKE_Fortran_FLAGS_RELEASE "-u -O3 -f2018 -w=uda")
+  set(CMAKE_Fortran_FLAGS_RELWITHDEBINFO "${CMAKE_Fortran_FLAGS_RELEASE} -g")
+endif()
 
-add_subdirectory(petaca)
+# Disable assertions in release builds
+add_compile_definitions($<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
+
+include(CTest)
+
 add_subdirectory(src)
 add_subdirectory(test)

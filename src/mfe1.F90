@@ -47,30 +47,42 @@ program mfe1
   use mfe_model_type
   use parameter_list_type
   use mfe_procs, only: eval_udot
-  use secure_hash_factory
   use,intrinsic :: iso_fortran_env, only: output_unit, error_unit
   implicit none
 
   real(kind=wp) :: t
   real(kind=wp), dimension(6) :: rvar
-  integer :: mode, rtype, j, errc, debug_unit, nstep
+  integer :: mode, rtype, i, j, errc, debug_unit, nstep
   integer, dimension(3) :: ivar
   type(NodeVar), dimension(:), pointer :: u, udot
   real(wp), allocatable :: uflat(:), udotflat(:)
   type(idaesol) :: solver
   type(mfe_model), target :: model
   type(parameter_list) :: params
-  class(secure_hash), allocatable :: hash
 
   character(len=16) :: string
-  
+  character(255) :: arg
+  character(:), allocatable :: prog, infile
+
   real :: cpusec, cpusec0
 
   call cpu_time (cpusec0)
-  
+
   ! Open the input and output files.
 
-  open (newunit=input_unit, file="mfein", position="rewind", action="read", status="old")
+  call get_command_argument(0, arg)
+  i = scan(arg, '/', back=.true.)
+  prog = trim(arg(i+1:))  ! remove the leading path component, if any
+
+  if (command_argument_count() /= 1) then
+    write(error_unit,'(3a)') 'Usage: ', prog, ' INFILE'
+    stop 1
+  end if
+
+  call get_command_argument(1,arg)
+  infile = trim(arg)
+
+  open (newunit=input_unit, file=infile, position="rewind", action="read", status="old")
 
   open (newunit=log_unit, file="mfelog", position="rewind", action="write", status="replace")
 
@@ -79,9 +91,9 @@ program mfe1
   call read_soln (u, udot)
   call read_data ()
 
-do j = 1, size(u)
-  write(*,*) u(j)%u, u(j)%x
-end do
+!do j = 1, size(u)
+!  write(*,*) u(j)%u, u(j)%x
+!end do
 
   t = tout(1)
   !mode = START_SOLN
@@ -92,27 +104,31 @@ end do
   if (errc /= 0) then
     call abort ( (/log_unit,error_unit/), "Bad initial solution.")
   end if
-  
+
   if (mstep <= 0) then
     stop
   end if
-  call checksum_nodevar (u, 'U')
-  call checksum_nodevar (udot, 'UDOT')
+!call checksum_nodevar (u, 'U')
+!call checksum_nodevar (udot, 'UDOT')
   allocate(uflat(NVARS*size(u)), udotflat(NVARS*size(udot)))
   call copy_from_nodevar (u, uflat)
   call copy_from_nodevar (udot, udotflat)
-  
-  call new_secure_hash (hash, 'md5')
-  call hash%update (uflat)
-  write(output_unit,'(a)') 'U: ' // hash%hexdigest()
-  call hash%update (udotflat)
-  write(output_unit,'(a)') 'UDOT: ' // hash%hexdigest()
-  
+
+!block
+!  use secure_hash_factory
+!  class(secure_hash), allocatable :: hash
+!  call new_secure_hash (hash, 'md5')
+!  call hash%update (uflat)
+!  write(output_unit,'(a)') 'U: ' // hash%hexdigest()
+!  call hash%update (udotflat)
+!  write(output_unit,'(a)') 'UDOT: ' // hash%hexdigest()
+!end block
+
   call params%set ('nlk-max-iter', mitr)
   call params%set ('nlk-ntol', ntol)
   call params%set ('nlk-max-vec', mvec)
   call params%set ('nlk-vec-tol', vtol)
-  
+
   call model%init (size(u))
   call solver%init (model, params)
   call solver%set_initial_state (t, uflat, udotflat)
@@ -144,7 +160,7 @@ end do
   do
 
     !call bdf2_solver (mode, rvar, ivar, tout(j), ofreq, rtype, u, udot, t)
-    
+
     call solver%get_metrics (nstep=nstep)
     call solver%integrate (h, rtype, ofreq-modulo(nstep,ofreq), tout(j), hlb, hub, mtry)
 
@@ -236,8 +252,8 @@ contains
       ustruct(j)%x = u2(k,j)
     end do
   end subroutine
-  
-  
+
+
   subroutine copy_from_nodevar (ustruct, u)
     use mfe_types, only: NodeVar
     type(NodeVar), intent(in) :: ustruct(:)

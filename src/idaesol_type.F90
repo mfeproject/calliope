@@ -308,6 +308,8 @@ contains
 
     ASSERT(this%seq >= 0)
 
+    status = 0
+
     !! Set the maximum number of time steps; default is unlimited.
     max_step = huge(1)
     if (present(nstep)) max_step = nstep
