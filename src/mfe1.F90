@@ -37,6 +37,7 @@
 
 program mfe1
 
+  use,intrinsic :: iso_fortran_env, only: r8 => real64
   use mfe_constants
   use mfe_types
   use common_io
@@ -50,12 +51,12 @@ program mfe1
   use,intrinsic :: iso_fortran_env, only: output_unit, error_unit
   implicit none
 
-  real(kind=wp) :: t
-  real(kind=wp), dimension(6) :: rvar
+  real(r8) :: t
+  real(r8) :: rvar(6)
   integer :: mode, rtype, i, j, errc, debug_unit, nstep
-  integer, dimension(3) :: ivar
-  type(NodeVar), dimension(:), pointer :: u, udot
-  real(wp), allocatable :: uflat(:), udotflat(:)
+  integer :: ivar(3)
+  type(NodeVar), pointer :: u(:), udot(:)
+  real(r8), allocatable :: uflat(:), udotflat(:)
   type(idaesol) :: solver
   type(mfe_model), target :: model
   type(parameter_list) :: params
@@ -240,10 +241,10 @@ contains
 
   subroutine copy_to_nodevar (u, ustruct)
     use mfe_types, only: NodeVar
-    real(wp), intent(in), target :: u(:)
+    real(r8), intent(in), target :: u(:)
     type(NodeVar), intent(out) :: ustruct(:)
     integer :: j, k
-    real(wp), pointer :: u2(:,:)
+    real(r8), pointer :: u2(:,:)
     u2(1:NVARS,1:size(ustruct)) => u
     do j = 1, size(ustruct)
       do k = 1, NEQNS
@@ -257,9 +258,9 @@ contains
   subroutine copy_from_nodevar (ustruct, u)
     use mfe_types, only: NodeVar
     type(NodeVar), intent(in) :: ustruct(:)
-    real(wp), intent(out), target :: u(:)
+    real(r8), intent(out), target :: u(:)
     integer :: j, k
-    real(wp), pointer :: u2(:,:)
+    real(r8), pointer :: u2(:,:)
     u2(1:NVARS,1:size(ustruct)) => u
     do j = 1, size(ustruct)
       do k = 1, NEQNS

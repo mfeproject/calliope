@@ -9,6 +9,7 @@
 
 module output
 
+  use,intrinsic :: iso_fortran_env, only: r8 => real64
   use mfe_constants
   use mfe_types
   use common_io
@@ -18,29 +19,29 @@ module output
   !public :: write_status, write_soln, write_vels
   public :: write_soln, write_vels
 
-  contains
+contains
 
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !!
-   !!  WRITE_STATUS
-   !!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ !!
+ !!  WRITE_STATUS
+ !!
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 !    subroutine write_status (units, cpusec, time)
 !    
 !      use mfe_ode_solver, only: bdf2_inquire
 !    
-!      integer, dimension(:), intent(in) :: units
+!      integer, intent(in) :: units(:)
 !      real, intent(in) :: cpusec
-!      real(kind=wp), intent(in), optional :: time
+!      real(r8), intent(in), optional :: time
 !      
-!      real(kind=wp) :: t, h
+!      real(r8) :: t, h
 !      integer :: j
-!      integer, dimension(5) :: n
+!      integer :: n(5)
 !      
-!      character(len=*), parameter :: fmt1 = "(/, i5, a, es11.4, a, es10.3, a, es10.3, a)"
-!      character(len=*), parameter :: fmt2 = "(t8, a, i5.5, ':', i4.4)"
-!      character(len=*), parameter :: fmt3 = "(a, 5(i3.3, :, ':'))"
+!      character(*), parameter :: fmt1 = "(/, i5, a, es11.4, a, es10.3, a, es10.3, a)"
+!      character(*), parameter :: fmt2 = "(t8, a, i5.5, ':', i4.4)"
+!      character(*), parameter :: fmt3 = "(a, 5(i3.3, :, ':'))"
 !      
 !      if(present(time)) then
 !        call bdf2_inquire( nstep=n(1), h_last=h )
@@ -66,50 +67,50 @@ module output
 !      end do
 !      
 !    end subroutine write_status
-    
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !!
-   !!  WRITE_SOLN
-   !!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-    subroutine write_soln (u, t)
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ !!
+ !!  WRITE_SOLN
+ !!
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-      type(NodeVar), dimension(:), intent(in) :: u
-      real(kind=wp), intent(in) :: t
+  subroutine write_soln (u, t)
 
-      integer :: j
-      character(len=16) :: fmt
+    type(NodeVar), intent(in) :: u(:)
+    real(r8), intent(in) :: t
 
-      write (unit=out_unit, fmt="(a,es13.5)") "TIME = ", t
-      write (unit=fmt,fmt="(a,i2,a)") "(", NVARS, "es17.8)"
-      do j = 1, size(u)
-        write (unit=out_unit,fmt=fmt) u(j) % x, u(j) % u
-      end do
+    integer :: j
+    character(16) :: fmt
 
-    end subroutine write_soln
+    write(out_unit,'(a,es13.5)') 'TIME = ', t
+    write(fmt,'(a,i0,a)') '(', NVARS, 'es17.8)'
+    do j = 1, size(u)
+      write(out_unit,fmt) u(j)%x, u(j)%u
+    end do
 
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-   !!
-   !!  WRITE_VELS
-   !!
-   !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  end subroutine write_soln
 
-    subroutine write_vels (unit, u, udot, t)
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ !!
+ !!  WRITE_VELS
+ !!
+ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-      integer, intent(in) :: unit
-      type(NodeVar), dimension(:), intent(in) :: u, udot
-      real(kind=wp), intent(in) :: t
+  subroutine write_vels(unit, u, udot, t)
 
-      integer :: j
-      character(len=16) :: fmt
+    integer, intent(in) :: unit
+    type(NodeVar), intent(in) :: u(:), udot(:)
+    real(r8), intent(in) :: t
 
-      write (unit=unit, fmt="(a,es13.5)") "TIME = ", t
-      write (unit=fmt,fmt="(a,i2,a)") "(", 1+NVARS, "es17.8)"
-      do j = 1, size(u)
-        write (unit=unit,fmt=fmt) u(j) % x, udot(j) % x, udot(j) % u
-      end do
+    integer :: j
+    character(16) :: fmt
 
-    end subroutine write_vels
+    write(unit, '(a,es13.5)') 'TIME = ', t
+    write(fmt,'(a,i0,a)') '(', 1+NVARS, 'es17.8)'
+    do j = 1, size(u)
+      write(unit,fmt) u(j)%x, udot(j)%x, udot(j)%u
+    end do
+
+  end subroutine write_vels
 
 end module output

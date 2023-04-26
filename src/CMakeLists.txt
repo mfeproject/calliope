@@ -1,25 +1,27 @@
 add_library(common OBJECT
-  bc.F90
-  blssolve.F90
-  comio.F90
+  bc_data.F90
+  bc_procs.F90
+  bls_solver.F90
+  common_io.F90
   idaesol_type.F90
-  init.F90
-  kindpar.F90
-  kinds.F90
-  locarray.F90
-  locglb.F90
-  loclapl.F90
-  locmfe.F90
-  locmfeprocs.F90
-  mfeconst.F90
-  mfedata.F90
+  initialize.F90
+  local_arrays.F90
+  local_global.F90
+  local_laplacian.F90
+  local_mfe.F90
+  local_mfe_procs.F90
+  mfe_constants.F90
+  mfe_data.F90
   mfe_model_type.F90
-  mfeprocs.F90
-  mfetypes.F90
+  mfe_procs.F90
+  mfe_types.F90
   nka_type.F90
-  norm.F90
+  norm_data.F90
+  norm_procs.F90
   output.F90
-  problem.F90
+  problem_data.F90
+  problem_init.F90
+  problem_pde.F90
   )
 
 target_link_libraries(common petaca)

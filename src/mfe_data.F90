@@ -9,12 +9,13 @@
 
 module mfe_data
 
+  use,intrinsic :: iso_fortran_env, only: r8 => real64
   use mfe_constants
   implicit none
   private
 
-  integer, save, public :: kreg
-  real(kind=wp), dimension(NEQNS), save, public :: eqw, eltvsc, segspr
-  real(kind=wp), save, public :: fdinc, dxmin
+  integer,  public :: kreg
+  real(r8), public :: eqw(NEQNS), eltvsc(NEQNS), segspr(NEQNS)
+  real(r8), public :: fdinc, dxmin
 
 end module mfe_data
