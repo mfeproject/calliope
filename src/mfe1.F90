@@ -55,7 +55,7 @@ program mfe1
   real(r8) :: rvar(6)
   integer :: mode, rtype, i, j, errc, debug_unit, nstep
   integer :: ivar(3)
-  type(NodeVar), pointer :: u(:), udot(:)
+  type(NodeVar(NEQNS)), pointer :: u(:), udot(:)
   real(r8), allocatable :: uflat(:), udotflat(:)
   type(idaesol) :: solver
   type(mfe_model), target :: model
@@ -242,12 +242,12 @@ contains
   subroutine copy_to_nodevar (u, ustruct)
     use mfe_types, only: NodeVar
     real(r8), intent(in), target :: u(:)
-    type(NodeVar), intent(out) :: ustruct(:)
+    type(NodeVar(*)), intent(out) :: ustruct(:)
     integer :: j, k
     real(r8), pointer :: u2(:,:)
-    u2(1:NVARS,1:size(ustruct)) => u
+    u2(1:1+ustruct%npde,1:size(ustruct)) => u
     do j = 1, size(ustruct)
-      do k = 1, NEQNS
+      do k = 1, ustruct%npde
         ustruct(j)%u(k) = u2(k,j)
       end do
       ustruct(j)%x = u2(k,j)
@@ -257,13 +257,13 @@ contains
 
   subroutine copy_from_nodevar (ustruct, u)
     use mfe_types, only: NodeVar
-    type(NodeVar), intent(in) :: ustruct(:)
+    type(NodeVar(*)), intent(in) :: ustruct(:)
     real(r8), intent(out), target :: u(:)
     integer :: j, k
     real(r8), pointer :: u2(:,:)
-    u2(1:NVARS,1:size(ustruct)) => u
+    u2(1:1+ustruct%npde,1:size(ustruct)) => u
     do j = 1, size(ustruct)
-      do k = 1, NEQNS
+      do k = 1, ustruct%npde
         u2(k,j) = ustruct(j)%u(k)
       end do
       u2(k,j) = ustruct(j)%x
@@ -272,7 +272,7 @@ contains
 
   subroutine checksum_nodevar (u, name)
     use secure_hash_factory
-    type(NodeVar), intent(in) :: u(:)
+    type(NodeVar(*)), intent(in) :: u(:)
     character(*), intent(in) :: name
     integer :: j
     class(secure_hash), allocatable :: hash

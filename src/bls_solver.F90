@@ -7,10 +7,12 @@
 !!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+#include "f90_assert.fpp"
+
 module bls_solver
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use mfe_constants
+  !use mfe_constants
   use mfe_types
   implicit none
   private
@@ -39,7 +41,7 @@ contains
 
   subroutine btfct(l, d, u)
 
-    type(NodeMtx), intent(inout) :: l(:), d(:), u(:)
+    type(NodeMtx(*)), intent(inout) :: l(:), d(:), u(:)
 
     integer :: i
 
@@ -63,8 +65,8 @@ contains
 
   subroutine btslv(l, d, u, b)
 
-    type(NodeMtx), intent(in)    :: l(:), d(:), u(:)
-    type(NodeVar), intent(inout) :: b(:)
+    type(NodeMtx(*)), intent(in)    :: l(:), d(:), u(:)
+    type(NodeVar(*)), intent(inout) :: b(:)
 
     integer :: i
 
@@ -93,12 +95,12 @@ contains
 
   subroutine fct(a)
 
-    type(NodeMtx), intent(inout) :: a
+    type(NodeMtx(*)), intent(inout) :: a
 
-    integer :: i, j, k
+    integer :: npde, i, j, k
     real(r8) :: lkk, lkj, ujk, lxx, lxj, ujx
 
-    do k = 1, NEQNS
+    do k = 1, a%npde
       lkk = a%uu(k,k)
       do j = 1, k - 1
         lkj = a%uu(k,j)
@@ -116,7 +118,7 @@ contains
     end do
 
     lxx = a%xx
-    do j = 1, NEQNS
+    do j = 1, a%npde
       lxj = a%xu(j)
       ujx = a%ux(j)
       do i = 1, j - 1
@@ -140,14 +142,14 @@ contains
 
   subroutine vfct(a)
 
-    type(NodeMtx), intent(inout) :: a(:)
+    type(NodeMtx(*)), intent(inout) :: a(:)
 
     integer :: i, j, k, l
     real(r8) :: lkk, lkj, ujk, lxx, lxj, ujx
 
     do l = 1, size(a)
 
-      do k = 1, NEQNS
+      do k = 1, a%npde
         lkk = a(l)%uu(k,k)
         do j = 1, k - 1
           lkj = a(l)%uu(k,j)
@@ -165,7 +167,7 @@ contains
       end do
 
       lxx = a(l)%xx
-      do j = 1, NEQNS
+      do j = 1, a%npde
         lxj = a(l)%xu(j)
         ujx = a(l)%ux(j)
         do i = 1, j - 1
@@ -191,13 +193,16 @@ contains
 
   subroutine slv(a, b)
 
-    type(NodeMtx), intent(in)    :: a
-    type(NodeVar), intent(inout) :: b
+    type(NodeMtx(*)), intent(in)    :: a
+    type(NodeVar(*)), intent(inout) :: b
 
-    integer  :: i, j
+    integer  :: npde, i, j
     real(r8) :: bj, bx
 
-    do j = 1, NEQNS
+    npde = b%npde
+    ASSERT(a%npde == npde)
+
+    do j = 1, npde
       bj = b%u(j)
       do i = 1, j - 1
         bj = bj - a%uu(j,i) * b%u(i)
@@ -206,14 +211,14 @@ contains
     end do
 
     bx = b%x
-    do i = 1, NEQNS
+    do i = 1, npde
       bx = bx - a%xu(i) * b%u(i)
     end do
     b%x = bx * a%xx
 
-    do j = NEQNS, 1, -1
+    do j = npde, 1, -1
       bj = b%u(j)
-      do i = j + 1, NEQNS
+      do i = j + 1, npde
         bj = bj - a%uu(j,i) * b%u(i)
       end do
       b%u(j) = bj - a%ux(j) * b%x
@@ -229,15 +234,18 @@ contains
 
   subroutine mslv(a, b)
 
-    type(NodeMtx), intent(in)    :: a
-    type(NodeMtx), intent(inout) :: b
+    type(NodeMtx(*)), intent(in)    :: a
+    type(NodeMtx(*)), intent(inout) :: b
 
-    integer :: i, j, k
+    integer :: npde, i, j, k
     real(r8) :: bj, bx
 
-    do k = 1, NEQNS
+    npde = a%npde
+    ASSERT(b%npde == npde)
 
-      do j = 1, NEQNS
+    do k = 1, npde
+
+      do j = 1, npde
         bj = b%uu(j,k)
         do i = 1, j - 1
           bj = bj - a%uu(j,i) * b%uu(i,k)
@@ -246,14 +254,14 @@ contains
       end do
 
       bx = b%xu(k)
-      do i = 1, NEQNS
+      do i = 1, npde
         bx = bx - a%xu(i) * b%uu(i,k)
       end do
       b%xu(k) = bx * a%xx
 
-      do j = NEQNS, 1, -1
+      do j = npde, 1, -1
         bj = b%uu(j,k)
-        do i = j + 1, NEQNS
+        do i = j + 1, npde
           bj = bj - a%uu(j,i) * b%uu(i,k)
         end do
         b%uu(j,k) = bj - a%ux(j) * b%xu(k)
@@ -261,7 +269,7 @@ contains
 
     end do
 
-    do j = 1, NEQNS
+    do j = 1, npde
       bj = b%ux(j)
       do i = 1, j - 1
         bj = bj - a%uu(j,i) * b%ux(i)
@@ -270,14 +278,14 @@ contains
     end do
 
     bx = b%xx
-    do i = 1, NEQNS
+    do i = 1, npde
       bx = bx - a%xu(i) * b%ux(i)
     end do
     b%xx = bx * a%xx
 
-    do j = NEQNS, 1, -1
+    do j = npde, 1, -1
       bj = b%ux(j)
-      do i = j + 1, NEQNS
+      do i = j + 1, npde
         bj = bj - a%uu(j,i) * b%ux(i)
       end do
       b%ux(j) = bj - a%ux(j) * b%xx
@@ -293,15 +301,18 @@ contains
 
   subroutine vslv(a, b)
 
-    type(NodeMtx), intent(in)    :: a(:)
-    type(NodeVar), intent(inout) :: b(:)
+    type(NodeMtx(*)), intent(in)    :: a(:)
+    type(NodeVar(*)), intent(inout) :: b(:)
 
-    integer :: i, j, l
+    integer :: npde, i, j, l
     real(r8) :: bj, bx
+
+    npde = a%npde
+    ASSERT(b%npde == npde)
 
     do l = 1, size(a)
 
-      do j = 1, NEQNS
+      do j = 1, npde
         bj = b(l)%u(j)
         do i = 1, j - 1
           bj = bj - a(l)%uu(j,i) * b(l)%u(i)
@@ -310,14 +321,14 @@ contains
       end do
 
       bx = b(l)%x
-      do i = 1, NEQNS
+      do i = 1, npde
         bx = bx - a(l)%xu(i) * b(l)%u(i)
       end do
       b(l)%x = bx * a(l)%xx
 
-      do j = NEQNS, 1, -1
+      do j = npde, 1, -1
         bj = b(l)%u(j)
-        do i = j + 1, NEQNS
+        do i = j + 1, npde
           bj = bj - a(l)%uu(j,i) * b(l)%u(i)
         end do
         b(l)%u(j) = bj - a(l)%ux(j) * b(l)%x
@@ -335,17 +346,20 @@ contains
 
   subroutine vmslv(a, b)
 
-    type(NodeMtx), intent(in)    :: a(:)
-    type(NodeMtx), intent(inout) :: b(:)
+    type(NodeMtx(*)), intent(in)    :: a(:)
+    type(NodeMtx(*)), intent(inout) :: b(:)
 
-    integer :: i, j, k, l
+    integer :: npde, i, j, k, l
     real(r8) :: bj, bx
+
+    npde = a%npde
+    ASSERT(b%npde == npde)
 
     do l = 1, size(a)
 
-      do k = 1, NEQNS
+      do k = 1, npde
 
-        do j = 1, NEQNS
+        do j = 1, npde
           bj = b(l)%uu(j,k)
           do i = 1, j - 1
             bj = bj - a(l)%uu(j,i) * b(l)%uu(i,k)
@@ -354,14 +368,14 @@ contains
         end do
 
         bx = b(l)%xu(k)
-        do i = 1, NEQNS
+        do i = 1, npde
           bx = bx - a(l)%xu(i) * b(l)%uu(i,k)
         end do
         b(l)%xu(k) = bx * a(l)%xx
 
-        do j = NEQNS, 1, -1
+        do j = npde, 1, -1
           bj = b(l)%uu(j,k)
-          do i = j + 1, NEQNS
+          do i = j + 1, npde
             bj = bj - a(l)%uu(j,i) * b(l)%uu(i,k)
           end do
           b(l)%uu(j,k) = bj - a(l)%ux(j) * b(l)%xu(k)
@@ -369,7 +383,7 @@ contains
 
       end do
 
-      do j = 1, NEQNS
+      do j = 1, npde
         bj = b(l)%ux(j)
         do i = 1, j - 1
           bj = bj - a(l)%uu(j,i) * b(l)%ux(i)
@@ -378,14 +392,14 @@ contains
       end do
 
       bx = b(l)%xx
-      do i = 1, NEQNS
+      do i = 1, npde
         bx = bx - a(l)%xu(i) * b(l)%ux(i)
       end do
       b(l)%xx = bx * a(l)%xx
 
-      do j = NEQNS, 1, -1
+      do j = npde, 1, -1
         bj = b(l)%ux(j)
-        do i = j + 1, NEQNS
+        do i = j + 1, npde
           bj = bj - a(l)%uu(j,i) * b(l)%ux(i)
         end do
         b(l)%ux(j) = bj - a(l)%ux(j) * b(l)%xx
@@ -403,23 +417,27 @@ contains
 
   subroutine ymax(c, a, b)
 
-    type(NodeMtx), intent(in)    :: a
-    type(NodeVar), intent(in)    :: b
-    type(NodeVar), intent(inout) :: c
+    type(NodeMtx(*)), intent(in)    :: a
+    type(NodeVar(*)), intent(in)    :: b
+    type(NodeVar(*)), intent(inout) :: c
 
-    integer :: i, j
+    integer :: npde, i, j
     real(r8) :: cj, cx
 
-    do j = 1, NEQNS
+    npde = a%npde
+    ASSERT(b%npde == npde)
+    ASSERT(c%npde == npde)
+
+    do j = 1, npde
       cj = c%u(j)
-      do i = 1, NEQNS
+      do i = 1, npde
         cj = cj - a%uu(j,i) * b%u(i)
       end do
       c%u(j) = cj - a%ux(j) * b%x
     end do
 
     cx = c%x
-    do i = 1, NEQNS
+    do i = 1, npde
       cx = cx - a%xu(i) * b%u(i)
     end do
     c%x = cx - a%xx * b%x
@@ -434,40 +452,44 @@ contains
 
   subroutine cmab(c, a, b)
 
-    type(NodeMtx), intent(in)    :: a, b
-    type(NodeMtx), intent(inout) :: c
+    type(NodeMtx(*)), intent(in)    :: a, b
+    type(NodeMtx(*)), intent(inout) :: c
 
-    integer :: i, j, k
+    integer :: npde, i, j, k
     real(r8) :: cjk, cjx, cxj, cxx
+    
+    npde = c%npde
+    ASSERT(a%npde == npde)
+    ASSERT(b%npde == npde)
 
-    do k = 1, NEQNS
-      do j = 1, NEQNS
+    do k = 1, npde
+      do j = 1, npde
         cjk = c%uu(j,k)
-        do i = 1, NEQNS
+        do i = 1, npde
           cjk = cjk - a%uu(j,i) * b%uu(i,k)
         end do
         c%uu(j,k) = cjk - a%ux(j) * b%xu(k)
       end do
     end do
 
-    do j = 1, NEQNS
+    do j = 1, npde
       cjx = c%ux(j)
-      do i = 1, NEQNS
+      do i = 1, npde
         cjx = cjx - a%uu(j,i) * b%ux(i)
       end do
       c%ux(j) = cjx - a%ux(j) * b%xx
     end do
 
-    do j = 1, NEQNS
+    do j = 1, npde
       cxj = c%xu(j)
-      do i = 1, NEQNS
+      do i = 1, npde
         cxj = cxj - a%xu (i) * b%uu(i,j)
       end do
       c%xu(j) = cxj - a%xx * b%xu(j)
     end do
 
     cxx = c%xx
-    do i = 1, NEQNS
+    do i = 1, npde
       cxx = cxx - a%xu(i) * b%ux(i)
     end do
     c%xx = cxx - a%xx * b%xx

@@ -174,7 +174,7 @@ contains
 
     integer :: i, j
     logical :: diagonal
-    type(NodeMtx) :: block
+    type(NodeMtx(NEQNS)) :: block
     real(r8) :: fac, term, term_xx, term_xu, term_uu
     real(r8) :: c(NEQNS)
 
@@ -353,7 +353,7 @@ contains
 
     integer :: i, j, k, l
     real(r8) :: rh
-    type(NodeVar) :: r_save(NVERT,ncell)
+    type(NodeVar(NEQNS)) :: r_save(NVERT,ncell)
 
     rh = 1.0_r8 / fdinc
 

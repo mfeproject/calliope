@@ -10,11 +10,12 @@
 module norm_data
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
+  use mfe_constants, only: NEQNS
   use mfe_types, only: NodeVar
   implicit none
   private
 
-  type(NodeVar), public :: ptol
+  type(NodeVar(NEQNS)), public :: ptol
   real(r8), public :: rtol
 
 end module norm_data

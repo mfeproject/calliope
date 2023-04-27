@@ -39,7 +39,7 @@ contains
     class(mfe_model) :: this
     real(r8), intent(in)  :: t, u(:), udot(:)
     real(r8), intent(out) :: f(:)
-    type(NodeVar) :: ustruct(this%nnode), udotstruct(this%nnode), fstruct(this%nnode)
+    type(NodeVar(NEQNS)) :: ustruct(this%nnode), udotstruct(this%nnode), fstruct(this%nnode)
     call copy_to_nodevar (u, ustruct)
     call copy_to_nodevar (udot, udotstruct)
     call eval_residual (ustruct, udotstruct, t, fstruct)
@@ -52,7 +52,7 @@ contains
     class(mfe_model) :: this
     real(r8), intent(in) :: t, u(:)
     real(r8), intent(inout) :: f(:)
-    type(NodeVar) :: fstruct(this%nnode)
+    type(NodeVar(NEQNS)) :: fstruct(this%nnode)
     call copy_to_nodevar (f, fstruct)
     call apply_inverse_jacobian (fstruct)
     call copy_from_nodevar (fstruct, f)
@@ -67,7 +67,7 @@ contains
     real(r8), intent(in)  :: t, u(:), udot(:), dt
     
     integer :: j, stat
-    type(NodeVar) :: ustruct(this%nnode), udotstruct(this%nnode)
+    type(NodeVar(NEQNS)) :: ustruct(this%nnode), udotstruct(this%nnode)
     
     call copy_to_nodevar (u, ustruct)
     call copy_to_nodevar (udot, udotstruct)
@@ -86,7 +86,7 @@ contains
     real(r8), intent(in) :: u(:), du(:)
     real(r8), intent(out) :: error
     
-    type(NodeVar) :: dustruct(this%nnode)
+    type(NodeVar(NEQNS)) :: dustruct(this%nnode)
     
     call copy_to_nodevar (du, dustruct)
     error = eval_norm(dustruct, 0)
@@ -104,7 +104,7 @@ contains
     integer,  intent(in)  :: stage
     integer,  intent(out) :: stat
 
-    type(NodeVar) :: ustruct(this%nnode)
+    type(NodeVar(NEQNS)) :: ustruct(this%nnode)
     
     call copy_to_nodevar (u, ustruct)
     call check_soln (ustruct, stage, stat)
@@ -115,7 +115,7 @@ contains
   subroutine copy_to_nodevar (u, ustruct)
     use mfe_types, only: NodeVar
     real(r8), intent(in), target :: u(:)
-    type(NodeVar), intent(out) :: ustruct(:)
+    type(NodeVar(*)), intent(out) :: ustruct(:)
     integer :: j, k
     real(r8), pointer :: u2(:,:)
     u2(1:NVARS,1:size(ustruct)) => u
@@ -130,7 +130,7 @@ contains
   
   subroutine copy_from_nodevar (ustruct, u)
     use mfe_types, only: NodeVar
-    type(NodeVar), intent(in) :: ustruct(:)
+    type(NodeVar(*)), intent(in) :: ustruct(:)
     real(r8), intent(out), target :: u(:)
     integer :: j, k
     real(r8), pointer :: u2(:,:)

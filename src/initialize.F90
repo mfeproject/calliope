@@ -7,6 +7,8 @@
 !!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+#include "f90_assert.fpp"
+
 module initialize
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
@@ -47,7 +49,7 @@ contains
 
   subroutine read_soln(u, udot)
 
-    type(NodeVar), pointer :: u(:), udot(:)
+    type(NodeVar(:)), pointer :: u(:), udot(:)
 
     integer :: nseg
     integer, allocatable  :: niseg(:)
@@ -65,7 +67,7 @@ contains
     nelt = sum(niseg)
     nnod = nelt + 1
 
-    allocate(u(nnod), udot(nnod))
+    allocate(NodeVar(NEQNS) :: u(nnod), udot(nnod))
 
     call refine(useg, niseg, u)
 
@@ -158,20 +160,20 @@ contains
 
     integer, intent(in) :: n(:)
     real(r8), intent(in) :: x0(:,:)
-    type(NodeVar), intent(out) :: x(:)
+    type(NodeVar(*)), intent(out) :: x(:)
 
     integer :: node, j, k
-    type(NodeVar) :: dx
+    type(NodeVar(x%npde)) :: dx
 
     node = 1
 
     do k = 1, size(n)
 
-      x(node)%u = x0(2:NVARS,k)
+      x(node)%u = x0(2:1+x%npde,k)
       x(node)%x = x0(1,k)
       node = node + 1
 
-      dx%u = (x0(2:NVARS,k+1) - x0(2:NVARS,k)) / n(k)
+      dx%u = (x0(2:1+x%npde,k+1) - x0(2:1+x%npde,k)) / n(k)
       dx%x = (x0(1,k+1) - x0(1,k)) / n(k)
 
       do j = 1, n(k) - 1
@@ -184,7 +186,7 @@ contains
 
     end do
 
-    x(node)%u = x0(2:NVARS,size(n)+1)
+    x(node)%u = x0(2:1+x%npde,size(n)+1)
     x(node)%x = x0(1,size(n)+1)
 
   end subroutine refine

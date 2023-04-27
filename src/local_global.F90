@@ -7,6 +7,8 @@
 !!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+#include "f90_assert.fpp"
+
 module local_global
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
@@ -29,20 +31,26 @@ contains
 
   subroutine gather_local_solution(global_u, global_udot)
 
-    type(NodeVar), intent(in) :: global_u(:)
-    type(NodeVar), intent(in), optional :: global_udot(:)
+    type(NodeVar(*)), intent(in) :: global_u(:)
+    type(NodeVar(*)), intent(in), optional :: global_udot(:)
 
-    integer :: j
+    integer :: npde, j
 
     ncell = size(global_u) - 1
+
+    npde  = global_u%npde
 
    !!!
    !!! ALLOCATE WORKING STORAGE
 
-    allocate(u(NVERT,ncell), r(NVERT,ncell), mtx(NVERT,NVERT,ncell), &
-             l(NEQNS,ncell), n(NEQNS,ncell), dudx(NEQNS,ncell), dx(ncell), du(NEQNS,ncell))
+    allocate(NodeVar(npde) :: u(NVERT,ncell), r(NVERT,ncell))
+    allocate(NodeMtx(npde) :: mtx(NVERT,NVERT,ncell))
+    allocate(l(NEQNS,ncell), n(NEQNS,ncell), dudx(NEQNS,ncell), dx(ncell), du(NEQNS,ncell))
 
-    if (present(global_udot)) allocate(udot(NVERT,ncell))
+    if (present(global_udot)) then
+      ASSERT(global_udot%npde == npde)
+      allocate(NodeVar(npde) :: udot(NVERT,ncell))
+    end if
 
    !!!
    !!! GATHER-UP LOCAL COPIES OF THE SOLUTION VECTORS
@@ -86,7 +94,7 @@ contains
 
   subroutine assemble_vector(global_r)
 
-    type(NodeVar), intent(out) :: global_r(:)
+    type(NodeVar(*)), intent(out) :: global_r(:)
 
     integer :: j
 
@@ -111,7 +119,7 @@ contains
 
   subroutine assemble_matrix(lowr, diag, uppr)
 
-    type(NodeMtx), intent(out) :: lowr(:), diag(:), uppr(:)
+    type(NodeMtx(*)), intent(out) :: lowr(:), diag(:), uppr(:)
 
     integer :: j
 
@@ -144,7 +152,7 @@ contains
 
   subroutine assemble_diagonal(diag)
 
-    type(NodeMtx), intent(out) :: diag(:)
+    type(NodeMtx(*)), intent(out) :: diag(:)
 
     integer :: j
 

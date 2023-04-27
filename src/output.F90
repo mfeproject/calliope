@@ -10,7 +10,7 @@
 module output
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use mfe_constants
+  !use mfe_constants
   use mfe_types
   use common_io
   implicit none
@@ -76,14 +76,14 @@ contains
 
   subroutine write_soln (u, t)
 
-    type(NodeVar), intent(in) :: u(:)
+    type(NodeVar(*)), intent(in) :: u(:)
     real(r8), intent(in) :: t
 
     integer :: j
     character(16) :: fmt
 
     write(out_unit,'(a,es13.5)') 'TIME = ', t
-    write(fmt,'(a,i0,a)') '(', NVARS, 'es17.8)'
+    write(fmt,'(a,i0,a)') '(', 1+u%npde, 'es17.8)'
     do j = 1, size(u)
       write(out_unit,fmt) u(j)%x, u(j)%u
     end do
@@ -99,14 +99,14 @@ contains
   subroutine write_vels(unit, u, udot, t)
 
     integer, intent(in) :: unit
-    type(NodeVar), intent(in) :: u(:), udot(:)
+    type(NodeVar(*)), intent(in) :: u(:), udot(:)
     real(r8), intent(in) :: t
 
     integer :: j
     character(16) :: fmt
 
     write(unit, '(a,es13.5)') 'TIME = ', t
-    write(fmt,'(a,i0,a)') '(', 1+NVARS, 'es17.8)'
+    write(fmt,'(a,i0,a)') '(', 2+u%npde, 'es17.8)'
     do j = 1, size(u)
       write(unit,fmt) u(j)%x, udot(j)%x, udot(j)%u
     end do

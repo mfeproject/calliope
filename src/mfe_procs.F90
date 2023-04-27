@@ -22,7 +22,7 @@ module mfe_procs
   public :: eval_residual, eval_jacobian, apply_inverse_jacobian, eval_udot
 
   ! Storage for the Jacobian matrix
-  type(NodeMtx), allocatable :: jac_lowr(:), jac_diag(:), jac_uppr(:)
+  type(NodeMtx(:)), allocatable :: jac_lowr(:), jac_diag(:), jac_uppr(:)
 
 contains
 
@@ -34,11 +34,11 @@ contains
 
   subroutine eval_residual(u, udot, t, r)
 
-    type(NodeVar), intent(in)  :: u(:), udot(:)
-    type(NodeVar), intent(out) :: r(:)
+    type(NodeVar(*)), intent(in)  :: u(:), udot(:)
+    type(NodeVar(*)), intent(out) :: r(:)
     real(r8), intent(in) :: t
 
-    type(NodeMtx) :: diag(size(u))
+    type(NodeMtx(u%npde)) :: diag(size(u))
 
    !!!
    !!! EVALUATE THE RESIDUAL
@@ -70,7 +70,7 @@ contains
 
 
   subroutine apply_inverse_jacobian(r)
-    type(NodeVar), intent(inout) :: r(:)
+    type(NodeVar(*)), intent(inout) :: r(:)
     call solve(jac_lowr, jac_diag, jac_uppr, r)
   end subroutine apply_inverse_jacobian
 
@@ -82,12 +82,12 @@ contains
 
   subroutine eval_jacobian(u, udot, t, h, errc)
 
-    type(NodeVar), intent(in) :: u(:), udot(:)
+    type(NodeVar(*)), intent(in) :: u(:), udot(:)
     real(r8), intent(in) :: t, h
     integer, intent(out) :: errc
 
     ! local variables.
-    type(NodeMtx) :: diag(size(u))
+    type(NodeMtx(u%npde)) :: diag(size(u))
 
     call gather_local_solution(u, udot)
 
@@ -110,7 +110,7 @@ contains
     end if
 
     if (.not.allocated(jac_lowr)) then
-      allocate(jac_lowr(size(u)), jac_diag(size(u)), jac_uppr(size(u)))
+      allocate(NodeMtx(u%npde) :: jac_lowr(size(u)), jac_diag(size(u)), jac_uppr(size(u)))
     end if
 
     call assemble_matrix(jac_lowr, jac_diag, jac_uppr)
@@ -139,8 +139,8 @@ contains
 
   subroutine eval_udot(u, t, udot, errc)
 
-    type(NodeVar), intent(in)  :: u(:)
-    type(NodeVar), intent(out) :: udot(:)
+    type(NodeVar(*)), intent(in)  :: u(:)
+    type(NodeVar(*)), intent(out) :: udot(:)
     real(r8), intent(in) :: t
     integer, intent(out) :: errc
 
@@ -158,7 +158,7 @@ contains
     call eval_mass_matrix
 
     if (.not. allocated(jac_lowr)) then
-      allocate(jac_lowr(size(u)), jac_diag(size(u)), jac_uppr(size(u)))
+      allocate(NodeMtx(u%npde) :: jac_lowr(size(u)), jac_diag(size(u)), jac_uppr(size(u)))
     end if
 
     call assemble_matrix(jac_lowr, jac_diag, jac_uppr)

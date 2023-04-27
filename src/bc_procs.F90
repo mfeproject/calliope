@@ -32,8 +32,8 @@ contains
 
   subroutine bc_res(u, r)
 
-    type(NodeVar), intent(in) :: u(:)
-    type(NodeVar), intent(inout) :: r(:)
+    type(NodeVar(*)), intent(in) :: u(:)
+    type(NodeVar(*)), intent(inout) :: r(:)
 
     integer :: n
 
@@ -64,7 +64,7 @@ contains
 
   subroutine bc_diag(diag)
 
-    type(NodeMtx), intent(inout) :: diag(:)
+    type(NodeMtx(*)), intent(inout) :: diag(:)
 
     integer :: n, i
 
@@ -111,7 +111,7 @@ contains
 
   subroutine bc_jac(jac_l, jac_d, jac_u)
 
-    type(NodeMtx), intent(inout) :: jac_l(:), jac_d(:), jac_u(:)
+    type(NodeMtx(*)), intent(inout) :: jac_l(:), jac_d(:), jac_u(:)
 
     integer :: n, i
 
@@ -159,8 +159,8 @@ contains
 
   subroutine bc_udot(a_l, a_d, a_u, g)
 
-    type(NodeMtx), intent(inout) :: a_l(:), a_d(:), a_u(:)
-    type(NodeVar), intent(inout) :: g(:)
+    type(NodeMtx(*)), intent(inout) :: a_l(:), a_d(:), a_u(:)
+    type(NodeVar(*)), intent(inout) :: g(:)
 
     integer :: n, i
 

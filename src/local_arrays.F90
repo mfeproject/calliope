@@ -21,11 +21,11 @@ module local_arrays
   integer, public :: ncell
 
   ! Local solution arrays.
-  type(NodeVar), allocatable, public :: u(:,:), udot(:,:)
+  type(NodeVar(:)), allocatable, public :: u(:,:), udot(:,:)
 
   ! Local result arrays.
-  type(NodeVar), allocatable, public :: r(:,:)
-  type(NodeMtx), allocatable, public :: mtx(:,:,:)
+  type(NodeVar(:)), allocatable, public :: r(:,:)
+  type(NodeMtx(:)), allocatable, public :: mtx(:,:,:)
 
   ! Intermediate data arrays.
   real(r8), allocatable, public :: l(:,:)

@@ -32,7 +32,7 @@ contains
 
   function eval_norm(du, key) result(norm)
 
-    type(NodeVar), intent(in) :: du(:)
+    type(NodeVar(*)), intent(in) :: du(:)
     integer, intent(in) :: key
     real(r8) :: norm
 
@@ -60,7 +60,7 @@ contains
 
   subroutine check_soln(u, key, errc)
 
-    type(NodeVar), intent(in) :: u(:)
+    type(NodeVar(*)), intent(in) :: u(:)
     integer, intent(in)  :: key
     integer, intent(out) :: errc
 

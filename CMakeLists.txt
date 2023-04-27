@@ -8,7 +8,7 @@ find_package(PETACA REQUIRED)
 
 ### Set the default Fortran compiler flags for NAG (CMake doesn't)
 if(CMAKE_Fortran_COMPILER_ID MATCHES NAG)
-  set(CMAKE_Fortran_FLAGS_DEBUG "-u -O0 -g -gline -C=all -nan")
+  set(CMAKE_Fortran_FLAGS_DEBUG "-u -O0 -g -gline -C=all")
   set(CMAKE_Fortran_FLAGS_RELEASE "-u -O3 -f2018 -w=uda")
   set(CMAKE_Fortran_FLAGS_RELWITHDEBINFO "${CMAKE_Fortran_FLAGS_RELEASE} -g")
 endif()
