@@ -16,6 +16,10 @@ endif()
 # Disable assertions in release builds
 add_compile_definitions($<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
 
+add_compile_options(
+  $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:-fimplicit-none>
+  $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:-ffree-line-length-none>)
+
 include(CTest)
 
 add_subdirectory(src)

@@ -10,8 +10,8 @@
 module output
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use mfe_constants
-  use mfe_types
+  !use mfe_constants
+  use mfe1_vector_type
   use common_io
   implicit none
   private
@@ -76,17 +76,19 @@ contains
 
   subroutine write_soln (u, t)
 
-    type(NodeVar), intent(in) :: u(:)
+    type(mfe1_vector), intent(in) :: u
     real(r8), intent(in) :: t
 
     integer :: j
     character(16) :: fmt
 
-    write(out_unit,'(a,es13.5)') 'TIME = ', t
-    write(fmt,'(a,i0,a)') '(', NVARS, 'es17.8)'
-    do j = 1, size(u)
-      write(out_unit,fmt) u(j)%x, u(j)%u
-    end do
+    associate (x => u%array(u%neqns+1,:), uu => u%array(:u%neqns,:))
+      write(out_unit,'(a,es13.5)') 'TIME = ', t
+      write(fmt,'(a,i0,a)') '(', u%neqns+1, 'es17.8)'
+      do j = 1, u%nnode
+        write(out_unit,fmt) x(j), uu(:,j)
+      end do
+    end associate
 
   end subroutine write_soln
 
@@ -99,17 +101,20 @@ contains
   subroutine write_vels(unit, u, udot, t)
 
     integer, intent(in) :: unit
-    type(NodeVar), intent(in) :: u(:), udot(:)
+    type(mfe1_vector), intent(in) :: u, udot
     real(r8), intent(in) :: t
 
     integer :: j
     character(16) :: fmt
 
-    write(unit, '(a,es13.5)') 'TIME = ', t
-    write(fmt,'(a,i0,a)') '(', 1+NVARS, 'es17.8)'
-    do j = 1, size(u)
-      write(unit,fmt) u(j)%x, udot(j)%x, udot(j)%u
-    end do
+    associate (x => u%array(u%neqns+1,:), xdot => udot%array(u%neqns+1,:), &
+               uudot => udot%array(:u%neqns,:))
+      write(unit, '(a,es13.5)') 'TIME = ', t
+      write(fmt,'(a,i0,a)') '(', u%neqns+2, 'es17.8)'
+      do j = 1, u%nnode
+        write(unit,fmt) x(j), xdot(j), uudot(:,j)
+      end do
+    end associate
 
   end subroutine write_vels
 

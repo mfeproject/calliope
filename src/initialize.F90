@@ -11,7 +11,7 @@ module initialize
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use mfe_constants
-  use mfe_types
+  use mfe1_vector_type
   use mfe_data
   use bc_data
   use norm_data
@@ -47,7 +47,7 @@ contains
 
   subroutine read_soln(u, udot)
 
-    type(NodeVar), pointer :: u(:), udot(:)
+    type(mfe1_vector), intent(out) :: u, udot
 
     integer :: nseg
     integer, allocatable  :: niseg(:)
@@ -65,7 +65,8 @@ contains
     nelt = sum(niseg)
     nnod = nelt + 1
 
-    allocate(u(nnod), udot(nnod))
+    call u%init(NEQNS, nnod)
+    call udot%init(u)
 
     call refine(useg, niseg, u)
 
@@ -78,10 +79,10 @@ contains
     call read_tagged_data(bc_right%x_type, 'Right-end node type')
 
     ! Save the initial boundary values.
-    bc_left%x_value = u(1)%x
-    bc_left%u_value = u(1)%u
-    bc_right%x_value = u(nnod)%x
-    bc_right%u_value = u(nnod)%u
+    bc_left%x_value = u%array(neqns+1,1)
+    bc_left%u_value = u%array(:neqns,1)
+    bc_right%x_value = u%array(neqns+1,nnod)
+    bc_right%u_value = u%array(:neqns,nnod)
 
   end subroutine read_soln
 
@@ -125,8 +126,8 @@ contains
 
     write(log_unit,*)
     call read_tagged_data(rtol, 'Relative dx tolerance (RTOL)')
-    call read_tagged_data(ptol%u, 'U predictor tolerance (PTOL)')
-    call read_tagged_data(ptol%x, 'X predictor tolerance (PTOL)')
+    call read_tagged_data(ptol(:neqns), 'U predictor tolerance (PTOL)')
+    call read_tagged_data(ptol(neqns+1), 'X predictor tolerance (PTOL)')
 
     write(log_unit,*)
     call read_tagged_data(h, 'Initial time step (H)')
@@ -158,34 +159,38 @@ contains
 
     integer, intent(in) :: n(:)
     real(r8), intent(in) :: x0(:,:)
-    type(NodeVar), intent(out) :: x(:)
+    type(mfe1_vector), intent(inout) :: x
 
     integer :: node, j, k
-    type(NodeVar) :: dx
+    real(r8) :: dx, du(NEQNS)
 
     node = 1
 
-    do k = 1, size(n)
-
-      x(node)%u = x0(2:NVARS,k)
-      x(node)%x = x0(1,k)
-      node = node + 1
-
-      dx%u = (x0(2:NVARS,k+1) - x0(2:NVARS,k)) / n(k)
-      dx%x = (x0(1,k+1) - x0(1,k)) / n(k)
-
-      do j = 1, n(k) - 1
-
-        x(node)%x = x(node-1)%x + dx%x
-        x(node)%u = x(node-1)%u + dx%u
+    associate (xx => x%array(NEQNS+1,:), u => x%array(:NEQNS,:))
+      do k = 1, size(n)
+        u(:,node) = x0(2:NVARS,k)
+        xx(node) = x0(1,k)
         node = node + 1
 
+        !dx%u = (x0(2:NVARS,k+1) - x0(2:NVARS,k)) / n(k)
+        !dx%x = (x0(1,k+1) - x0(1,k)) / n(k)
+
+        dx = (x0(1,k+1) - x0(1,k)) / n(k)
+        du = (x0(2:NVARS,k+1) - x0(2:NVARS,k)) / n(k)
+
+        do j = 1, n(k) - 1
+          !x(node)%x = x(node-1)%x + dx%x
+          !x(node)%u = x(node-1)%u + dx%u
+          xx(node) = xx(node-1) + dx
+          u(:,node) = u(:,node-1) + du
+          node = node + 1
+        end do
       end do
-
-    end do
-
-    x(node)%u = x0(2:NVARS,size(n)+1)
-    x(node)%x = x0(1,size(n)+1)
+      !x(node)%u = x0(2:NVARS,size(n)+1)
+      !x(node)%x = x0(1,size(n)+1)
+      u(:,node) = x0(2:NVARS,size(n)+1)
+      xx(node) = x0(1,size(n)+1)
+    end associate
 
   end subroutine refine
 

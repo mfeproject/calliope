@@ -39,7 +39,7 @@ program mfe1
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use mfe_constants
-  use mfe_types
+  use mfe1_vector_type
   use common_io
   use output
   use initialize
@@ -49,13 +49,14 @@ program mfe1
   use parameter_list_type
   use mfe_procs, only: eval_udot
   use,intrinsic :: iso_fortran_env, only: output_unit, error_unit
+  use timer_tree_type
   implicit none
 
   real(r8) :: t
   real(r8) :: rvar(6)
   integer :: mode, rtype, i, j, errc, debug_unit, nstep
   integer :: ivar(3)
-  type(NodeVar), pointer :: u(:), udot(:)
+  type(mfe1_vector) :: u, udot
   real(r8), allocatable :: uflat(:), udotflat(:)
   type(idaesol) :: solver
   type(mfe_model), target :: model
@@ -67,6 +68,8 @@ program mfe1
 
   real :: cpusec, cpusec0
 
+  call start_timer('simulation')
+  call start_timer('initialization')
   call cpu_time (cpusec0)
 
   ! Open the input and output files.
@@ -109,11 +112,8 @@ program mfe1
   if (mstep <= 0) then
     stop
   end if
-!call checksum_nodevar (u, 'U')
-!call checksum_nodevar (udot, 'UDOT')
-  allocate(uflat(NVARS*size(u)), udotflat(NVARS*size(udot)))
-  call copy_from_nodevar (u, uflat)
-  call copy_from_nodevar (udot, udotflat)
+!write(output_unit,'(a)') 'U: ' // u%checksum()
+!write(output_unit,'(a)') 'UDOT: ' // udot%checksum()
 
 !block
 !  use secure_hash_factory
@@ -130,9 +130,9 @@ program mfe1
   call params%set ('nlk-max-vec', mvec)
   call params%set ('nlk-vec-tol', vtol)
 
-  call model%init (size(u))
+  call model%init (u%nnode)
   call solver%init (model, params)
-  call solver%set_initial_state (t, uflat, udotflat)
+  call solver%set_initial_state (t, u, udot)
 
   if (debug /= 0) then
     open (newunit=debug_unit, file="bdfout", action="write", status="replace")
@@ -157,16 +157,20 @@ program mfe1
   if (ofreq <= 0) then
     ofreq = mstep
   end if
+  call stop_timer('initialization')
 
   do
 
     !call bdf2_solver (mode, rvar, ivar, tout(j), ofreq, rtype, u, udot, t)
 
+    call start_timer('integration')
     call solver%get_metrics (nstep=nstep)
     call solver%integrate (h, rtype, ofreq-modulo(nstep,ofreq), tout(j), hlb, hub, mtry)
+    call stop_timer('integration')
 
     !mode = RESUME_SOLN
 
+    call start_timer('output')
     t = solver%last_time()
     call cpu_time (cpusec)
     cpusec = cpusec - cpusec0
@@ -178,51 +182,46 @@ program mfe1
 
       !case (SOLN_AT_TOUT)       ! Integrated to TOUT.
       case (SOLVED_TO_TOUT)       ! Integrated to TOUT.
-        call solver%get_interpolated_state (tout(j), uflat)
-        call copy_to_nodevar (uflat, u)
+        call solver%get_interpolated_state (tout(j), u)
         call write_soln (u, tout(j))
         !call write_status ([log_unit, output_unit], cpusec, t)
         j = j + 1
 
       !case (SOLN_AT_STEP)       ! Integrated OFREQ more steps.
       case (SOLVED_TO_NSTEP)       ! Integrated OFREQ more steps.
-        call solver%get_last_state_copy (uflat)
-        call copy_to_nodevar (uflat, u)
+        call solver%get_last_state_copy (u)
         call write_soln (u, t)
         !call write_status ([log_unit, output_unit], cpusec)
 
       !case (FAIL_ON_STEP)
       case (STEP_FAILED)
-        call solver%get_last_state_copy (uflat)
-        call copy_to_nodevar (uflat, u)
+        call solver%get_last_state_copy (u)
         call write_soln (u, t)
         !call write_status ([log_unit, output_unit], cpusec)
         call abort ([log_unit, error_unit], "Repeated failure at a step.")
 
       !case (SMALL_H_FAIL)
       case (STEP_SIZE_TOO_SMALL)
-        call solver%get_last_state_copy (uflat)
-        call copy_to_nodevar (uflat, u)
+        call solver%get_last_state_copy (u)
         call write_soln (u, t)
         !call write_status ([log_unit, output_unit], cpusec)
         call abort ([log_unit, error_unit], "Next time step is too small.")
 
       !case (FAIL_ON_START)
       case (BAD_INPUT)
-        call solver%get_last_state_copy (uflat)
-        call copy_to_nodevar (uflat, u)
+        call solver%get_last_state_copy (u)
         call write_soln (u, t)
         !call write_status ([log_unit, output_unit], cpusec)
         call abort ([log_unit, error_unit], "Bad input.")
 
       case default
-        call solver%get_last_state_copy (uflat)
-        call copy_to_nodevar (uflat, u)
+        call solver%get_last_state_copy (u)
         call write_soln (u, t)
         !call write_status ([log_unit, output_unit], cpusec)
         call abort ([log_unit, error_unit], "Unknown return type!")
 
     end select
+    call stop_timer('output')
 
     if (j > size(tout)) then
       call info ([log_unit, output_unit], "Integrated to final TOUT.  Done.")
@@ -237,51 +236,15 @@ program mfe1
 
   end do
 
+  call stop_timer('simulation')
+  call write_timer_tree(output_unit, 2)
+
 contains
 
-  subroutine copy_to_nodevar (u, ustruct)
-    use mfe_types, only: NodeVar
-    real(r8), intent(in), target :: u(:)
-    type(NodeVar), intent(out) :: ustruct(:)
-    integer :: j, k
-    real(r8), pointer :: u2(:,:)
-    u2(1:NVARS,1:size(ustruct)) => u
-    do j = 1, size(ustruct)
-      do k = 1, NEQNS
-        ustruct(j)%u(k) = u2(k,j)
-      end do
-      ustruct(j)%x = u2(k,j)
-    end do
-  end subroutine
-
-
-  subroutine copy_from_nodevar (ustruct, u)
-    use mfe_types, only: NodeVar
-    type(NodeVar), intent(in) :: ustruct(:)
-    real(r8), intent(out), target :: u(:)
-    integer :: j, k
-    real(r8), pointer :: u2(:,:)
-    u2(1:NVARS,1:size(ustruct)) => u
-    do j = 1, size(ustruct)
-      do k = 1, NEQNS
-        u2(k,j) = ustruct(j)%u(k)
-      end do
-      u2(k,j) = ustruct(j)%x
-    end do
-  end subroutine
-
   subroutine checksum_nodevar (u, name)
-    use secure_hash_factory
-    type(NodeVar), intent(in) :: u(:)
+    type(mfe1_vector), intent(in) :: u
     character(*), intent(in) :: name
-    integer :: j
-    class(secure_hash), allocatable :: hash
-    call new_secure_hash (hash, 'md5')
-    do j = 1, size(u)
-      call hash%update(u(j)%u)
-      call hash%update(u(j)%x)
-    end do
-    write(output_unit,'(a)') name // ': ' // hash%hexdigest()
+    write(output_unit,'(a)') name // ': ' // u%checksum()
   end subroutine
 
 end program mfe1

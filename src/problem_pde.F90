@@ -50,10 +50,10 @@ contains
 
     do i = 1, ncell
 
-      f1 = flux(u(1,i)%u)                      ! Flux at left endpoint.
-      f2 = flux(u(2,i)%u)                      ! Flux at right endpoint.
-      umid = 0.5_r8 * (u(1,i)%u + u(2,i)%u)   ! Variables at midpoint.
-      favg = c1 * (f1 + f2) + c2 * flux (umid)    ! Average flux (Simpson).
+      f1 = flux(u(:3,1,i))                      ! Flux at left endpoint.
+      f2 = flux(u(:3,2,i))                      ! Flux at right endpoint.
+      umid = 0.5_r8 * (u(:3,1,i) + u(:3,2,i))   ! Variables at midpoint.
+      favg = c1 * (f1 + f2) + c2 * flux(umid)   ! Average flux (Simpson).
 
       rx1 = 0.0_r8
       rx2 = 0.0_r8
@@ -61,23 +61,23 @@ contains
       do k = 1, 3
 
         term = (eqw(k) * (favg(k) - f1(k)))
-        rx1 = rx1 - term * n(k,i)%x
-        r(1,i)%u(k) = - term * n(k,i)%u
+        rx1 = rx1 - term * n(1,k,i)
+        r(k,1,i) = - term * n(2,k,i)
 
         term = (eqw(k) * (f2(k) - favg(k)))
-        rx2 = rx2 - term * n(k,i)%x
-        r(2,i)%u(k) = - term * n(k,i)%u
+        rx2 = rx2 - term * n(1,k,i)
+        r(k,2,i) = - term * n(2,k,i)
 
       end do
 
-      r(1,i)%x = rx1
-      r(2,i)%x = rx2
+      r(ix,1,i) = rx1
+      r(ix,2,i) = rx2
 
     end do
 
-    call laplacian (eqno=1, coef=visc)
-    call laplacian (eqno=2, coef=visc)
-    call laplacian (eqno=3, coef=visc)
+    call laplacian(eqno=1, coef=visc)
+    call laplacian(eqno=2, coef=visc)
+    call laplacian(eqno=3, coef=visc)
 
   end subroutine pde_rhs
 

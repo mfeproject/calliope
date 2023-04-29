@@ -37,6 +37,7 @@ module idaesol_type
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use state_history_type
   use nka_type
+  use vector_class
   implicit none
   private
 
@@ -51,11 +52,15 @@ module idaesol_type
     integer  :: freeze_count = 0    ! don't increase step size for this number of steps
     integer  :: mitr = 5            ! maximum number of nonlinear iterations
     real(r8) :: ntol = 0.1_r8       ! nonlinear solver error tolerance (relative to 1)
-    type(nka) :: nka                ! nonlinear Krylov accelerator structure
+    type(nka), allocatable :: nka   ! nonlinear Krylov accelerator
     type(state_history) :: uhist    ! solution history structure
 
+    !! Persistent temporary workspace
+    class(vector), allocatable :: u, u0, up
+    class(vector), allocatable :: du, udot  ! local to bce_step
+
     !! Perfomance counters
-    integer :: pcfun_calls = 0      ! number of function/procon calls to PCFUN
+    integer :: pcfun_calls = 0      ! number of calls to PCFUN
     integer :: updpc_calls = 0      ! number of calls to UPDPC
     integer :: updpc_failed = 0     ! number of UPDPC calls returning an error
     integer :: retried_bce = 0      ! number of retried BCE steps
@@ -86,49 +91,53 @@ module idaesol_type
 
   type, abstract, public :: idaesol_model
   contains
-    procedure(model_size), deferred :: size
+    procedure(alloc_vector), deferred :: alloc_vector
     procedure(compute_f), deferred :: compute_f
     procedure(apply_precon), deferred :: apply_precon
     procedure(compute_precon), deferred :: compute_precon
-    procedure(corr_norm), deferred :: corr_norm
-    procedure(check_state),  deferred :: check_state
+    procedure(du_norm), deferred :: du_norm
+    procedure(check_state), deferred :: check_state
   end type
 
   abstract interface
-    integer function model_size (this)
-      import idaesol_model
+    subroutine alloc_vector(this, vec)
+      import idaesol_model, vector
       class(idaesol_model), intent(in) :: this
-    end function model_size
-    subroutine compute_f (this, t, u, udot, f)
-      import idaesol_model, r8
+      class(vector), allocatable, intent(out) :: vec
+    end subroutine
+    subroutine compute_f(this, t, u, udot, f)
+      import idaesol_model, vector, r8
       class(idaesol_model) :: this
-      real(r8), intent(in)  :: t, u(:), udot(:)
-      real(r8), intent(out) :: f(:)
-    end subroutine compute_f
-    subroutine apply_precon (this, t, u, f)
-      import idaesol_model, r8
+      real(r8), intent(in) :: t
+      class(vector), intent(inout) :: u, udot ! TODO: why inout and not in?
+      class(vector), intent(inout) :: f
+    end subroutine
+    subroutine apply_precon(this, t, u, f)
+      import idaesol_model, vector, r8
       class(idaesol_model) :: this
-      real(r8), intent(in) :: t, u(:)
-      real(r8), intent(inout) :: f(:)
-    end subroutine apply_precon
-    subroutine compute_precon (this, t, u, udot, dt)
-      import idaesol_model, r8
+      real(r8), intent(in) :: t
+      class(vector), intent(inout) :: u ! TODO: why inout and not in?
+      class(vector), intent(inout) :: f
+    end subroutine
+    subroutine compute_precon(this, t, u, udot, dt)
+      import idaesol_model, vector, r8
       class(idaesol_model) :: this
-      real(r8), intent(in) :: t, u(:), udot(:), dt
-    end subroutine compute_precon
-    subroutine corr_norm (this, u, du, error)
-      import :: idaesol_model, r8
+      real(r8), intent(in) :: t, dt
+      class(vector), intent(inout) :: u, udot ! TODO: why inout and not in?
+    end subroutine
+    subroutine du_norm(this, u, du, error)
+      import :: idaesol_model, vector, r8
       class(idaesol_model) :: this
-      real(r8), intent(in) :: u(:), du(:)
+      class(vector), intent(in) :: u, du
       real(r8), intent(out) :: error
-    end subroutine corr_norm
-    subroutine check_state (this, u, stage, stat)
-      import :: idaesol_model, r8
+    end subroutine
+    subroutine check_state(this, u, stage, stat)
+      import :: idaesol_model, vector
       class(idaesol_model) :: this
-      real(r8), intent(in)  :: u(:)
-      integer,  intent(in)  :: stage
-      integer,  intent(out) :: stat
-    end subroutine check_state
+      class(vector), intent(in) :: u
+      integer, intent(in) :: stage
+      integer, intent(out) :: stat
+    end subroutine
   end interface
 
   real(r8), parameter, private :: RMIN = 0.25_r8
@@ -149,15 +158,15 @@ contains
   !! Return a pointer to the current system state.
   subroutine get_last_state_view (this, view)
     class(idaesol), intent(in) :: this
-    real(r8), pointer, intent(out) :: view(:)
-    call this%uhist%get_last_state_view (view)
+    class(vector), pointer, intent(out) :: view
+    call this%uhist%get_last_state_view(view)
   end subroutine get_last_state_view
 
   !! Return a copy of the current system state.
-  subroutine get_last_state_copy (this, copy)
+  subroutine get_last_state_copy(this, copy)
     class(idaesol), intent(in) :: this
-    real(r8), intent(out) :: copy(:)
-    call this%uhist%get_last_state_copy (copy)
+    class(vector), intent(inout) :: copy
+    call this%uhist%get_last_state_copy(copy)
   end subroutine get_last_state_copy
 
   !! Return the current system time.
@@ -181,12 +190,11 @@ contains
   !! contiguous segment of the interpolated state starting at index FIRST
   !! (default 1) and length the size of U.
 
-  subroutine get_interpolated_state (this, t, u, first)
+  subroutine get_interpolated_state(this, t, u)
     class(idaesol), intent(in) :: this
     real(r8), intent(in) :: t
-    real(r8), intent(out) :: u(:)
-    integer, intent(in), optional :: first
-    call this%uhist%interp_state (t, u, first)
+    class(vector), intent(inout) :: u
+    call this%uhist%interp_state(t, u)
   end subroutine get_interpolated_state
 
   subroutine write_metrics (this, unit)
@@ -230,7 +238,7 @@ contains
     this%verbose = .false.
   end subroutine set_quiet_stepping
 
-  subroutine init (this, model, params)
+  subroutine init(this, model, params)
 
     use parameter_list_type
 
@@ -242,9 +250,6 @@ contains
     real(r8) :: vtol
 
     this%model => model
-
-    this%n = model%size()
-    INSIST(this%n > 0)
 
     call params%get ('nlk-max-iter', this%mitr, default=5)
     INSIST(this%mitr > 1)
@@ -259,12 +264,21 @@ contains
     call params%get ('nlk-vec-tol', vtol, default=0.01_r8)
     INSIST(vtol > 0.0_r8)
 
+    call model%alloc_vector(this%u)
+    call model%alloc_vector(this%u0)
+    call model%alloc_vector(this%up)
+    call model%alloc_vector(this%du)
+    call model%alloc_vector(this%udot)
+
     !! Initialize the NKA structure.
-    call this%nka%init (this%n, maxv)
-    call this%nka%set_vec_tol (vtol)
+    if (maxv > 0) then
+      allocate(this%nka)
+      call this%nka%init(this%u, maxv)
+      call this%nka%set_vec_tol(vtol)
+    end if
 
     !! We need to maintain 3 solution vectors for quadratic extrapolation.
-    call this%uhist%init (3, this%n)
+    call this%uhist%init(3, this%u)
 
   end subroutine init
 
@@ -273,12 +287,11 @@ contains
   !! state satisfy the DAE, f(t,u,du/dt) = 0.  This is trivial for explicit
   !! DE, du/dt = f(t,u), but is often not for DAEs.
 
-  subroutine set_initial_state (this, t, u, udot)
+  subroutine set_initial_state(this, t, u, udot)
     class(idaesol), intent(inout) :: this
-    real(r8), intent(in) :: t, u(:), udot(:)
-    ASSERT(size(u) == this%n)
-    ASSERT(size(udot) == this%n)
-    call this%uhist%flush (t, u, udot)
+    real(r8), intent(in) :: t
+    class(vector), intent(in) :: u, udot
+    call this%uhist%flush(t, u, udot)
     this%seq = 0
   end subroutine set_initial_state
 
@@ -293,8 +306,7 @@ contains
   !! for HMAX is the largest postive real (huge()).  At most MTRY attempts to
   !! take a step are allowed before a step failure occurs; the default is 10.
 
-  subroutine integrate (this, hnext, status, &
-                        nstep, tout, hmin, hmax, mtry)
+  subroutine integrate(this, hnext, status, nstep, tout, hmin, hmax, mtry)
 
     class(idaesol), intent(inout) :: this
     real(r8), intent(inout) :: hnext
@@ -304,9 +316,12 @@ contains
     optional :: nstep, tout, hmin, hmax, mtry
 
     integer  :: max_step, max_try, step, stat
-    real(r8) :: t, tlast, h, t_out, h_min, h_max, u(this%n)
+    real(r8) :: t, tlast, h, t_out, h_min, h_max
 
     ASSERT(this%seq >= 0)
+
+   !!!
+   !!! PROCESS THE INPUT AND CHECK IT FOR CORRECTNESS
 
     status = 0
 
@@ -337,6 +352,9 @@ contains
 
     if (status == BAD_INPUT) return
 
+   !!!
+   !!! BEGIN TIME STEPPING
+
     step = 0
     do
 
@@ -356,7 +374,7 @@ contains
 
       step = step + 1
 
-      call advance (this, h_min, max_try, t, u, hnext, stat)
+      call advance (this, h_min, max_try, t, this%u, hnext, stat)
       if (stat /= 0) then
         status = STEP_FAILED
         return
@@ -385,13 +403,14 @@ contains
   !! attemped.  This subroutine merely wraps STEP, which does the actual work,
   !! with the strategy just outlined.
 
-  subroutine advance (this, hmin, mtry, t, u, hnext, stat)
+  subroutine advance(this, hmin, mtry, t, u, hnext, stat)
 
     type(idaesol), intent(inout) :: this
     real(r8), intent(in)    :: hmin
     integer,  intent(in)    :: mtry
     real(r8), intent(inout) :: t
-    real(r8), intent(out)   :: u(:), hnext
+    class(vector), intent(inout) :: u
+    real(r8), intent(out)   :: hnext
     integer,  intent(out)   :: stat
 
     integer :: try
@@ -432,7 +451,8 @@ contains
   subroutine commit_state (this, t, u)
 
     class(idaesol), intent(inout) :: this
-    real(r8), intent(in) :: t, u(:)
+    real(r8), intent(in) :: t
+    class(vector), intent(in) :: u
 
     real(r8) :: h
 
@@ -468,16 +488,14 @@ contains
 
     class(idaesol), intent(inout) :: this
     real(r8), intent(in)  :: t
-    real(r8), intent(out) :: u(:)
+    class(vector), intent(inout) :: u ! data is intent(out)
     real(r8), intent(out) :: hnext
     integer,  intent(out) :: stat
 
     real(r8) :: eta, etah, h, t0, tlast, perr, dt(3)
-    real(r8) :: u0(size(u)), up(size(u))
     logical  :: fresh_pc, predictor_error
 
     ASSERT(this%seq >= 0)
-    ASSERT(size(u) == this%n)
 
     tlast = this%uhist%last_time()
     h = t - tlast
@@ -499,18 +517,18 @@ contains
     if (this%uhist%depth() == 2) then ! BDF1
       etah = h
       t0 = tlast
-      call this%uhist%interp_state (t,  up, order=1)
-      call this%uhist%interp_state (t0, u0, order=0)
+      call this%uhist%interp_state(t,  this%up, order=1)
+      call this%uhist%interp_state(t0, this%u0, order=0)
     else  ! BDF2
       eta = (this%hlast + h) / (this%hlast + 2.0_r8 * h)
       etah = eta * h
       t0 = tlast + (1.0_r8 - eta)*h
-      call this%uhist%interp_state (t,  up, order=2)
-      call this%uhist%interp_state (t0, u0, order=1)
+      call this%uhist%interp_state(t,  this%up, order=2)
+      call this%uhist%interp_state(t0, this%u0, order=1)
     end if
 
     !! Check the predicted solution for admissibility.
-    call this%model%check_state (up, 0, stat)
+    call this%model%check_state (this%up, 0, stat)
     if (stat /= 0) then ! it's bad; cut h and retry.
       this%rejected_steps = this%rejected_steps + 1
       if (this%verbose) write(this%unit,fmt=7)
@@ -535,7 +553,11 @@ contains
       !! Update the preconditioner if necessary.
       if (.not.this%usable_pc) then
         this%updpc_calls = this%updpc_calls + 1
-        call this%model%compute_precon (t, up, (up-u0)/etah, etah)
+        !call this%model%compute_precon(t, up, (up-u0)/etah, etah)
+        call this%udot%copy(this%up)
+        call this%udot%update(-1.0_r8, this%u0)
+        call this%udot%scale(1.0_r8/etah)
+        call this%model%compute_precon(t, this%up, this%udot, etah)
         if (this%verbose) write(this%unit,fmt=3) t
         this%hpc = etah
         this%usable_pc = .true.
@@ -543,8 +565,8 @@ contains
       end if
 
       !! Solve the nonlinear BCE system.
-      u = up ! Initial solution guess is the predictor.
-      call bce_step (this, t, etah, u0, u, stat)
+      call u%copy(this%up) ! Initial solution guess is the predictor.
+      call bce_step(this, t, etah, this%u0, u, stat)
       if (stat == 0) exit BCE ! the BCE step was successful.
 
       if (fresh_pc) then ! preconditioner was fresh; cut h and return error condition.
@@ -573,8 +595,10 @@ contains
     if (predictor_error) then
 
       !! Predictor error control.
-      u0 = u - up
-      call this%model%corr_norm (u, u0, perr)
+      !du = u - up
+      call this%du%copy(u)
+      call this%du%update(-1.0_r8, this%up)
+      call this%model%du_norm(u, this%du, perr)
       if (perr < 4.0_r8) then ! accept the step.
         if (this%verbose) write(this%unit,fmt=4) perr
         stat = 0
@@ -591,7 +615,7 @@ contains
       !! size history, but don't change the step size by too great a factor.
       dt(1) = h
       dt(2:) = h + this%uhist%time_deltas()
-      call select_step_size (dt, perr, hnext)
+      call select_step_size(dt, perr, hnext)
       hnext = max(RMIN*h, min(RMAX*h, hnext))
       if (this%freeze_count /= 0) hnext = min(h, hnext)
 
@@ -642,14 +666,14 @@ contains
 
   end subroutine select_step_size
   
-  subroutine trap_step (this, t, u, stat)
+  subroutine trap_step(this, t, u, stat)
   
     class(idaesol), intent(inout) :: this
     real(r8), intent(in)  :: t
-    real(r8), intent(out) :: u(:)
+    class(vector), intent(inout) :: u
     integer,  intent(out) :: stat
     
-    real(r8) :: tlast, t0, h, etah, u0(this%n)
+    real(r8) :: tlast, t0, h, etah
     
     tlast = this%uhist%last_time()
     h = t - tlast
@@ -658,11 +682,11 @@ contains
 
     if (this%verbose) write(this%unit,fmt=1) this%seq+1, tlast, h
     
-    call this%uhist%interp_state (t,  u,  order=1)
-    call this%uhist%interp_state (t0, u0, order=1)
+    call this%uhist%interp_state(t,  u,  order=1)
+    call this%uhist%interp_state(t0, this%u0, order=1)
     
     !! Check the predicted solution for admissibility.
-    call this%model%check_state (u, 0, stat)
+    call this%model%check_state(u, 0, stat)
     if (stat /= 0) then ! it's bad; cut h and retry.
       this%rejected_steps = this%rejected_steps + 1
       if (this%verbose) write(this%unit,fmt=7)
@@ -672,12 +696,15 @@ contains
     
     !! Update the preconditioner.
     this%updpc_calls = this%updpc_calls + 1
-    call this%model%compute_precon (t, u, (u-u0)/etah, etah)
+    call this%udot%copy(u)
+    call this%udot%update(-1.0_r8, this%u0)
+    call this%udot%scale(1.0_r8/etah)
+    call this%model%compute_precon(t, u, this%udot, etah)
     if (this%verbose) write(this%unit,fmt=3) t
     this%hpc = etah
 
     !! Solve the nonlinear BCE system.
-    call bce_step (this, t, etah, u0, u, stat)
+    call bce_step(this, t, etah, this%u0, u, stat)
     if (stat /= 0) then
       this%failed_bce = this%failed_bce + 1
       this%freeze_count = 1
@@ -719,15 +746,16 @@ contains
   !!     weighted moving finite element code I: in one dimension", SIAM J.
   !!     Sci. Comput;, 19 (1998), pp. 728-765..
 
-  subroutine bce_step (this, t, h, u0, u, stat)
+  subroutine bce_step(this, t, h, u0, u, stat)
 
     type(idaesol), intent(inout) :: this
-    real(r8), intent(in)    :: t, h, u0(:)
-    real(r8), intent(inout) :: u(:)
+    real(r8), intent(in)    :: t, h
+    class(vector), intent(in) :: u0
+    class(vector), intent(inout) :: u
     integer,  intent(out)   :: stat
 
     integer  :: itr
-    real(r8) :: error, du(size(u))
+    real(r8) :: error
 
     call this%nka%restart
 
@@ -744,14 +772,20 @@ contains
 
       !! Evaluate the nonlinear function and precondition it.
       this%pcfun_calls = this%pcfun_calls + 1
-      call this%model%compute_f (t, u, (u-u0)/h, du)
-      call this%model%apply_precon (t, u, du)
+
+      !call this%model%compute_f(t, u, (u-u0)/h, du)
+      call this%udot%copy(u)
+      call this%udot%update(-1.0_r8, u0)
+      call this%udot%scale(1.0_r8/h)
+      call this%model%compute_f(t, u, this%udot, this%du)
+      call this%model%apply_precon(t, u, this%du)
 
       !! NKA accelerated correction.
-      call this%nka%accel_update (du)
+      if (allocated(this%nka)) call this%nka%accel_update(this%du)
 
       !! Next solution iterate.
-      u = u - du
+      !u = u - du
+      call u%update(-1.0_r8, this%du)
 
       !! Check the solution iterate for admissibility.
       call this%model%check_state (u, 1, stat)
@@ -762,7 +796,7 @@ contains
       end if
 
       !! Error estimate.
-      call this%model%corr_norm (u, du, error)
+      call this%model%du_norm(u, this%du, error)
       if (this%verbose) write(this%unit,fmt=3) itr, error
 
       !! Check for convergence.

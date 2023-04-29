@@ -10,11 +10,13 @@
 module mfe_procs
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use mfe_types
+  use mfe_constants, only: NVARS
+  use mfe1_vector_type
   use local_mfe_procs
   use bc_procs
-  use bls_solver
+  use block_linear_solver
   use common_io, only: element_info
+  use timer_tree_type
   implicit none
   private
 
@@ -22,7 +24,7 @@ module mfe_procs
   public :: eval_residual, eval_jacobian, apply_inverse_jacobian, eval_udot
 
   ! Storage for the Jacobian matrix
-  type(NodeMtx), allocatable :: jac_lowr(:), jac_diag(:), jac_uppr(:)
+  real(r8), allocatable :: jac_lowr(:,:,:), jac_diag(:,:,:), jac_uppr(:,:,:)
 
 contains
 
@@ -34,11 +36,11 @@ contains
 
   subroutine eval_residual(u, udot, t, r)
 
-    type(NodeVar), intent(in)  :: u(:), udot(:)
-    type(NodeVar), intent(out) :: r(:)
+    type(mfe1_vector), intent(in) :: u, udot
+    type(mfe1_vector), intent(inout) :: r
     real(r8), intent(in) :: t
 
-    type(NodeMtx) :: diag(size(u))
+    real(r8) :: diag(NVARS,NVARS,u%nnode)
 
    !!!
    !!! EVALUATE THE RESIDUAL
@@ -60,8 +62,8 @@ contains
     call assemble_diagonal(diag)
     call force_bc(diag)
 
-    call factor(diag)
-    call solve(diag, r)
+    call vfct(diag)
+    call vslv(diag, r%array)
 
     call free_local_arrays
     !call apply_inverse_jacobian(r)
@@ -70,8 +72,8 @@ contains
 
 
   subroutine apply_inverse_jacobian(r)
-    type(NodeVar), intent(inout) :: r(:)
-    call solve(jac_lowr, jac_diag, jac_uppr, r)
+    type(mfe1_vector), intent(inout) :: r
+    call btslv(jac_lowr, jac_diag, jac_uppr, r%array)
   end subroutine apply_inverse_jacobian
 
  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
@@ -82,25 +84,33 @@ contains
 
   subroutine eval_jacobian(u, udot, t, h, errc)
 
-    type(NodeVar), intent(in) :: u(:), udot(:)
+    type(mfe1_vector), intent(in) :: u, udot
     real(r8), intent(in) :: t, h
     integer, intent(out) :: errc
 
     ! local variables.
-    type(NodeMtx) :: diag(size(u))
+    real(r8) :: diag(NVARS,NVARS,u%nnode)
 
+    call start_timer('preprocessing')
     call gather_local_solution(u, udot)
 
     call preprocessor
+    call stop_timer('preprocessing')
 
+    call start_timer('mass-matrix')
     call eval_mass_matrix(factor = -1.0_r8 / h)
+    call stop_timer('mass-matrix')
 
     ! Capture the unscaled diagonal for preconditioning.
+    call start_timer('diag-pc')
     call assemble_diagonal(diag)
     diag = (-h) * diag
     call force_bc(diag)
+    call stop_timer('diag-pc')
 
+    call start_timer('eval_dfdy')
     call eval_dfdy(t, errc)
+    call stop_timer('eval_dfdy')
 
     if (errc /= 0) then
       call element_info('EVAL_DFDY: BAD ELEMENT', errc)
@@ -109,21 +119,25 @@ contains
       return
     end if
 
-    if (.not.allocated(jac_lowr)) then
-      allocate(jac_lowr(size(u)), jac_diag(size(u)), jac_uppr(size(u)))
-    end if
+    if (.not.allocated(jac_lowr)) allocate(jac_lowr, jac_diag, jac_uppr, mold=diag)
 
+    call start_timer('assembly')
     call assemble_matrix(jac_lowr, jac_diag, jac_uppr)
     call force_bc(jac_lowr, jac_diag, jac_uppr)
+    call stop_timer('assembly')
 
     ! Diagonal preconditioning.
-    call factor(diag)
-    call solve(diag, jac_lowr)
-    call solve(diag, jac_diag)
-    call solve(diag, jac_uppr)
+    call start_timer('diag-pc')
+    call vfct(diag)
+    call vmslv(diag, jac_lowr)
+    call vmslv(diag, jac_diag)
+    call vmslv(diag, jac_uppr)
+    call stop_timer('diag-pc')
 
     ! Factorize the Jacobian.
-    call factor(jac_lowr, jac_diag, jac_uppr)
+    call start_timer('factorization')
+    call btfct(jac_lowr, jac_diag, jac_uppr)
+    call stop_timer('factorization')
 
     call free_local_arrays
 
@@ -139,8 +153,8 @@ contains
 
   subroutine eval_udot(u, t, udot, errc)
 
-    type(NodeVar), intent(in)  :: u(:)
-    type(NodeVar), intent(out) :: udot(:)
+    type(mfe1_vector), intent(in) :: u
+    type(mfe1_vector), intent(inout) :: udot
     real(r8), intent(in) :: t
     integer, intent(out) :: errc
 
@@ -157,8 +171,8 @@ contains
 
     call eval_mass_matrix
 
-    if (.not. allocated(jac_lowr)) then
-      allocate(jac_lowr(size(u)), jac_diag(size(u)), jac_uppr(size(u)))
+    if (.not.allocated(jac_lowr)) then
+      allocate(jac_lowr(NVARS,NVARS,u%nnode), jac_diag(NVARS,NVARS,u%nnode), jac_uppr(NVARS,NVARS,u%nnode))
     end if
 
     call assemble_matrix(jac_lowr, jac_diag, jac_uppr)
@@ -172,8 +186,8 @@ contains
     call force_bc(jac_lowr, jac_diag, jac_uppr, udot)
 
     ! Solve for du/dt...
-    call factor(jac_lowr, jac_diag, jac_uppr)
-    call solve(jac_lowr, jac_diag, jac_uppr, udot)
+    call btfct(jac_lowr, jac_diag, jac_uppr)
+    call btslv(jac_lowr, jac_diag, jac_uppr, udot%array)
 
     deallocate(jac_lowr, jac_diag, jac_uppr)
     call free_local_arrays

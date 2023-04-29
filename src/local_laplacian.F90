@@ -45,7 +45,7 @@ contains
 
     do i = 1, ncell
 
-      r1 = 1.0_r8 / n(eqno,i)%u
+      r1 = 1.0_r8 / n(2,eqno,i)
       m = dudx(eqno,i)
 
      !!!
@@ -63,11 +63,11 @@ contains
      !!!
      !!! LOAD THE INNER PRODUCTS
 
-      r(1,i)%x       = r(1,i)%x       - (c * s2)
-      r(1,i)%u(eqno) = r(1,i)%u(eqno) - (c * s1)
+      r(ix,1,i)   = r(ix,1,i)   - (c * s2)
+      r(eqno,1,i) = r(eqno,1,i) - (c * s1)
 
-      r(2,i)%x       = r(2,i)%x       + (c * s2)
-      r(2,i)%u(eqno) = r(2,i)%u(eqno) + (c * s1)
+      r(ix,2,i)   = r(ix,2,i)   + (c * s2)
+      r(eqno,2,i) = r(eqno,2,i) + (c * s1)
 
     end do
 
@@ -89,7 +89,7 @@ contains
 
     do i = 1, ncell
 
-      r1 = 1.0_r8 / n(eqno,i)%u
+      r1 = 1.0_r8 / n(2,eqno,i)
       m = dudx(eqno,i)
 
      !!!
@@ -108,12 +108,12 @@ contains
      !!! LOAD THE INNER PRODUCTS
 
       c = eqw(eqno) * coef(1,i)
-      r(1,i)%x       = r(1,i)%x       - c * s2
-      r(1,i)%u(eqno) = r(1,i)%u(eqno) - c * s1
+      r(ix,1,i)   = r(ix,1,i)   - c * s2
+      r(eqno,1,i) = r(eqno,1,i) - c * s1
 
       c = eqw(eqno) * coef(2,i)
-      r(2,i)%x       = r(2,i)%x       + c * s2
-      r(2,i)%u(eqno) = r(2,i)%u(eqno) + c * s1
+      r(ix,2,i)   = r(ix,2,i)   + c * s2
+      r(eqno,2,i) = r(eqno,2,i) + c * s1
 
     end do
 

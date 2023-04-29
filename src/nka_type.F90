@@ -150,6 +150,7 @@
 module nka_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
+  use vector_class
   implicit none
   private
 
@@ -157,22 +158,18 @@ module nka_type
     private
     logical :: subspace = .false.
     logical :: pending  = .false.
-    integer :: vlen = 0         ! vector length
     integer :: mvec = 0         ! maximum number of vectors
     real(r8) :: vtol = 0.01_r8  ! vector drop tolerance
-    procedure(dp), pointer, nopass :: dp => null()
     !! Subspace storage.
-    real(r8), allocatable :: v(:,:)   ! update vectors
-    real(r8), allocatable :: w(:,:)   ! function difference vectors
-    real(r8), allocatable :: h(:,:)   ! matrix of inner products
+    class(vector), allocatable :: v(:)  ! update vectors
+    class(vector), allocatable :: w(:)  ! function difference vectors
+    real(r8), allocatable :: h(:,:)     ! matrix of inner products
     !! Linked-list organization of the vector storage.
     integer :: first, last, free
     integer, allocatable :: next(:), prev(:)
   contains
     procedure :: init => nka_init
     procedure :: set_vec_tol => nka_set_vec_tol
-    procedure :: set_dot_prod => nka_set_dot_prod
-    procedure :: vec_len => nka_vec_len
     procedure :: num_vec => nka_num_vec
     procedure :: max_vec => nka_max_vec
     procedure :: vec_tol => nka_vec_tol
@@ -185,18 +182,16 @@ module nka_type
 
 contains
 
-  subroutine nka_init (this, vlen, mvec)
+  subroutine nka_init (this, vec, mvec)
     class(nka), intent(out) :: this
-    integer, intent(in) :: vlen
+    class(vector), intent(in) :: vec
     integer, intent(in) :: mvec
     integer :: n
     ASSERT(mvec > 0)
-    ASSERT(vlen >= 0)
-    this%dp => dp
-    this%vlen = vlen
     this%mvec = mvec
     n = mvec + 1
-    allocate(this%v(vlen,n), this%w(vlen,n))
+    call vec%clone(this%v, n)
+    call vec%clone(this%w, n)
     allocate(this%h(n,n), this%next(n), this%prev(n))
     call nka_restart (this)
     ASSERT(nka_defined(this))
@@ -208,18 +203,6 @@ contains
     ASSERT(vtol > 0.0_r8)
     this%vtol = vtol
   end subroutine nka_set_vec_tol
-
-  subroutine nka_set_dot_prod (this, dot_prod)
-    class(nka), intent(inout) :: this
-    procedure(dp), pointer :: dot_prod
-    ASSERT(associated(dot_prod))
-    this%dp => dot_prod
-  end subroutine nka_set_dot_prod
-
-  real(r8) function dp (x, y)
-    real(r8), intent(in) :: x(:), y(:)
-    dp = dot_product(x, y)
-  end function dp
 
   integer function nka_num_vec (this)
     class(nka), intent(in) :: this
@@ -238,11 +221,6 @@ contains
     nka_max_vec = this%mvec
   end function nka_max_vec
 
-  integer function nka_vec_len (this)
-    class(nka), intent(in) :: this
-    nka_vec_len = this%vlen
-  end function nka_vec_len
-
   real(r8) function nka_vec_tol (this)
     class(nka), intent(in) :: this
     nka_vec_tol = this%vtol
@@ -257,14 +235,13 @@ contains
   subroutine nka_accel_update (this, f)
 
     class(nka), intent(inout) :: this
-    real(r8),   intent(inout) :: f(:)
+    class(vector), intent(inout) :: f
 
     ! local variables.
     integer :: i, j, k, new, nvec
     real(r8) :: s, hkk, hkj, cj, c(this%mvec+1)
 
     ASSERT(nka_defined(this))
-    ASSERT(size(f) == size(this%v,dim=1))
 
    !!!
    !!! UPDATE THE ACCELERATION SUBSPACE
@@ -272,8 +249,10 @@ contains
     if (this%pending) then
 
       !! Next function difference w_1.
-      this%w(:,this%first) = this%w(:,this%first) - f
-      s = sqrt(this%dp(this%w(:,this%first), this%w(:,this%first)))
+      !this%w(:,this%first) = this%w(:,this%first) - f
+      !s = sqrt(this%dp(this%w(:,this%first), this%w(:,this%first)))
+      call this%w(this%first)%update(-1.0_r8, f)
+      s = this%w(this%first)%norm2()
 
       !! If the function difference is 0, we can't update the subspace with
       !! this data; so we toss it out and continue.  In this case it is likely
@@ -288,13 +267,16 @@ contains
     if (this%pending) then
 
       !! Normalize w_1 and apply same factor to v_1.
-      this%v(:,this%first) = this%v(:,this%first) / s
-      this%w(:,this%first) = this%w(:,this%first) / s
+      !this%v(:,this%first) = this%v(:,this%first) / s
+      !this%w(:,this%first) = this%w(:,this%first) / s
+      call this%v(this%first)%scale(1.0_r8/s)
+      call this%w(this%first)%scale(1.0_r8/s)
 
       !! Update H.
       k = this%next(this%first)
       do while (k /= 0)
-        this%h(this%first,k) = this%dp(this%w(:,this%first), this%w(:,k))
+        !this%h(this%first,k) = this%dp(this%w(:,this%first), this%w(:,k))
+        this%h(this%first,k) = this%w(this%first)%dot(this%w(k))
         k = this%next(k)
       end do
 
@@ -367,7 +349,8 @@ contains
     this%free = this%next(this%free)
 
     !! Save the original f for the next call.
-    this%w(:,new) = f
+    !this%w(:,new) = f
+    call this%w(new)%copy(f)
 
    !!!
    !!! ACCELERATED UPDATE
@@ -377,7 +360,8 @@ contains
       !! Project f onto the span of the w vectors: forward substitution
       j = this%first
       do while (j /= 0)
-        cj = this%dp(f, this%w(:,j))
+        !cj = this%dp(f, this%w(:,j))
+        cj = f%dot(this%w(j))
         i = this%first
         do while (i /= j)
           cj = cj - this%h(j,i) * c(i)
@@ -403,14 +387,16 @@ contains
       !! The accelerated update
       k = this%first
       do while (k /= 0)
-        f = f - c(k) * this%w(:,k) + c(k) * this%v(:,k)
+        !f = f - c(k) * this%w(:,k) + c(k) * this%v(:,k)
+        call f%update(-c(k), this%w(k), c(k), this%v(k))
         k = this%next(k)
       end do
 
     end if
 
     !! Save the update for the next call.
-    this%v(:,new) = f
+    !this%v(:,new) = f
+    call this%v(new)%copy(f)
 
     !! Prepend the new vectors to the list.
     this%prev(new) = 0
@@ -478,9 +464,8 @@ contains
       if (this%mvec < 1) exit
       if (.not.allocated(this%v)) exit
       if (.not.allocated(this%w)) exit
-      if (any(shape(this%v) /= shape(this%w))) exit
-      if (size(this%v,dim=1) /= this%vlen) exit
-      if (size(this%v,dim=2) /= this%mvec+1) exit
+      if (size(this%v) /= this%mvec+1) exit
+      if (size(this%w) /= this%mvec+1) exit
       if (.not.allocated(this%h)) exit
       if (size(this%h,dim=1) /= this%mvec+1) exit
       if (size(this%h,dim=2) /= this%mvec+1) exit

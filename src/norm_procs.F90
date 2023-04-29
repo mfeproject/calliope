@@ -11,7 +11,7 @@ module norm_procs
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use mfe_constants
-  use mfe_types, only: NodeVar
+  use mfe1_vector_type
   use mfe_data, only: dxmin
   use norm_data
   use common_io, only: element_info
@@ -32,20 +32,20 @@ contains
 
   function eval_norm(du, key) result(norm)
 
-    type(NodeVar), intent(in) :: du(:)
+    type(mfe1_vector), intent(in) :: du
     integer, intent(in) :: key
     real(r8) :: norm
 
     integer :: k
-    real(r8) :: del_dx(size(du)-1)
+    real(r8) :: del_dx(du%nnode-1)
 
     ! Weighted max-norm.
-    norm = maxval(abs(du%x)) / ptol%x
+    norm = maxval(abs(du%array(NEQNS+1,:))) / ptol(NEQNS+1)
     do k = 1, NEQNS
-      norm = max(norm, maxval(abs(du%u(k))) / ptol%u(k))
+      norm = max(norm, maxval(abs(du%array(k,:))) / ptol(k))
     end do
 
-    del_dx = du(2:size(du))%x - du(1:size(du)-1)%x
+    del_dx = du%array(NEQNS+1,2:du%nnode) - du%array(NEQNS+1,1:du%nnode-1)
 
     ! Relative norm on element lengths.
     norm = max(norm, maxval(abs(del_dx) / dx) / rtol)
@@ -60,17 +60,17 @@ contains
 
   subroutine check_soln(u, key, errc)
 
-    type(NodeVar), intent(in) :: u(:)
+    type(mfe1_vector), intent(in) :: u
     integer, intent(in)  :: key
     integer, intent(out) :: errc
 
     integer :: loc
 
-    if (.not. allocated(dx)) then
-      allocate (dx(size(u)-1))
-    end if
+    if (.not.allocated(dx)) allocate(dx(u%nnode-1))
 
-    dx = u(2:size(u))%x - u(1:size(u)-1)%x
+    associate (x => u%array(NEQNS+1,:))
+      dx = x(2:size(x)) - x(1:size(x)-1)
+    end associate
     loc = minloc(dx, dim=1)
 
     if (dx(loc) < dxmin) then

@@ -10,26 +10,21 @@
 module local_arrays
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use mfe_types, only: NodeVar, NodeMtx
   implicit none
   private
 
-  type, public :: TwoVec
-    real(r8) :: x, u
-  end type TwoVec
-
-  integer, public :: ncell
+  integer, public :: ncell, ix
 
   ! Local solution arrays.
-  type(NodeVar), allocatable, public :: u(:,:), udot(:,:)
+  real(r8), allocatable, public :: u(:,:,:), udot(:,:,:)
 
   ! Local result arrays.
-  type(NodeVar), allocatable, public :: r(:,:)
-  type(NodeMtx), allocatable, public :: mtx(:,:,:)
+  real(r8), allocatable, public :: r(:,:,:)
+  real(r8), allocatable, public :: mtx(:,:,:,:,:)
 
   ! Intermediate data arrays.
   real(r8), allocatable, public :: l(:,:)
-  type(TwoVec), allocatable, public :: n(:,:)
+  real(r8), allocatable, public :: n(:,:,:)
   real(r8), allocatable, public :: dudx(:,:)
   real(r8), allocatable, public :: dx(:)
   real(r8), allocatable, public :: du(:,:)
