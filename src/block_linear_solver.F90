@@ -6,55 +6,12 @@ module block_linear_solver
   implicit none
   private
   
-  public :: btfct, btslv
   public :: vfct, vslv, vmslv
+  public :: fct, slv, mslv
+  public :: ymax, cmab
 
 contains
 
-  subroutine btfct(l, d, u)
-  
-    real(r8), intent(inout) :: l(:,:,:), d(:,:,:), u(:,:,:)
-    
-    integer :: i
-    
-    ASSERT(size(l,3) == size(d,3))
-    ASSERT(size(d,3) == size(u,3))
-    
-    call fct(d(:,:,1))
-    do i = 2, size(d,dim=3)
-      call mslv(d(:,:,i-1), u(:,:,i-1))
-      call cmab(d(:,:,i), l(:,:,i), u(:,:,i-1))
-      call fct(d(:,:,i))
-    end do
-    
-  end subroutine btfct
-  
-  
-  subroutine btslv(l, d, u, b)
-  
-    real(r8), intent(in) :: l(:,:,:), d(:,:,:), u(:,:,:)
-    real(r8), intent(inout) :: b(:,:)
-    
-    integer :: i
-    
-    ASSERT(size(l,3) == size(d,3))
-    ASSERT(size(d,3) == size(u,3))
-    ASSERT(size(b,2) == size(d,3))
-    
-    !! Forward substitution
-    call slv(d(:,:,1), b(:,1))
-    do i = 2, size(b,2)
-      call ymax(b(:,i), l(:,:,i), b(:,i-1))
-      call slv(d(:,:,i), b(:,i))
-    end do
-    
-    !! Backward substitution
-    do i = size(b,2)-1, 1, -1
-      call ymax(b(:,i), u(:,:,i), b(:,i+1))
-    end do
-  
-  end subroutine btslv
-    
   !! LU factorization of a square matrix.  No pivoting (intentionally).
   !! Unit lower triangular factor; unit diagonal not stored.  Reciprocal
   !! of upper triangular diagonal stored.

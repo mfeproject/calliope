@@ -117,7 +117,7 @@ contains
   contains
     pure subroutine scl(lhs, a, n)
       integer, intent(in) :: n
-      real(r8), intent(out) :: lhs(n)
+      real(r8), intent(inout) :: lhs(n)
       real(r8), intent(in) :: a
       integer :: j
       do j = 1, n

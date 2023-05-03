@@ -1,27 +1,22 @@
 add_library(common OBJECT
-  bc_data.F90
-  bc_procs.F90
   block_linear_solver.F90
+  btd_matrix_type.F90
   common_io.F90
   idaesol_type.F90
+  index_func_type.F90
   initialize.F90
-  local_arrays.F90
-  local_global.F90
-  local_laplacian.F90
-  local_mfe.F90
-  local_mfe_procs.F90
+  mfe1_disc_type.F90
+  mfe1_solver_type.F90
   mfe1_vector_type.F90
   mfe_constants.F90
-  mfe_data.F90
+  mfe_idaesol_model_type.F90
   mfe_model_type.F90
-  mfe_procs.F90
+  mfe_precon_type.F90
+  mfe_sim_type.F90
   nka_type.F90
-  norm_data.F90
-  norm_procs.F90
   output.F90
   problem_data.F90
   problem_init.F90
-  problem_pde.F90
   state_history_type.F90
   vector_class.F90
   )

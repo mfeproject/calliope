@@ -76,6 +76,7 @@ module idaesol_type
     procedure :: init
     procedure :: set_initial_state
     procedure :: integrate
+    procedure :: advance
     procedure :: step
     procedure :: commit_state
     procedure :: get_interpolated_state
@@ -405,7 +406,7 @@ contains
 
   subroutine advance(this, hmin, mtry, t, u, hnext, stat)
 
-    type(idaesol), intent(inout) :: this
+    class(idaesol), intent(inout) :: this
     real(r8), intent(in)    :: hmin
     integer,  intent(in)    :: mtry
     real(r8), intent(inout) :: t

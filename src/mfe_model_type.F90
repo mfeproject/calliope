@@ -1,136 +1,191 @@
-#include "f90_assert.fpp"
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!
+!! Copyright (c) 1997 Neil N. Carlson
+!!
+!! This file is part of MFE1 which is released under the MIT license.  See the
+!! file LICENSE or visit http://opensource.org/licenses/MIT for details.
+!!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 module mfe_model_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use idaesol_type, only: idaesol_model
-  use mfe_constants, only: NEQNS
-  use vector_class
+  use mfe_constants, only: NVARS
   use mfe1_vector_type
+  use mfe1_disc_type
+  use btd_matrix_type
+  use block_linear_solver
+  use index_func_type
+  use common_io, only: element_info
   use timer_tree_type
   implicit none
   private
-  
-  type, extends(idaesol_model), public :: mfe_model
-    integer :: nnode
+
+  type, public :: mfe_model
+    integer :: neqns, nvars, ncell, nnode
+    type(mfe1_disc) :: disc
+    type(index_func) :: bc_dir(NVARS)
   contains
     procedure :: init
-    procedure :: alloc_vector
-    procedure :: compute_f
-    procedure :: apply_precon
-    procedure :: compute_precon
-    procedure :: du_norm
-    procedure :: check_state
-  end type mfe_model
+    procedure :: set_boundary_values
+    procedure :: eval_residual
+    procedure :: eval_udot
+  end type
 
 contains
 
-  subroutine init (this, nnode)
+  subroutine init(this, neqns, nnode, params, stat, errmsg)
+    use parameter_list_type
     class(mfe_model), intent(out) :: this
-    integer, intent(in) :: nnode
+    integer, intent(in) :: neqns, nnode
+    type(parameter_list), intent(inout) :: params
+    integer, intent(out) :: stat
+    character(:), allocatable, intent(out) :: errmsg
+    this%neqns = neqns
+    this%nvars = neqns + 1
     this%nnode = nnode
+    this%ncell = nnode - 1
+    call this%disc%init(this%neqns, this%ncell, params, stat, errmsg)
+
+    block ! Initialize boundary conditions
+      integer :: i, n
+      logical, allocatable :: bc_left_u_type(:), bc_right_u_type(:)
+      logical :: bc_left_x_type, bc_right_x_type
+
+      do i = 1, this%neqns
+        n = 0
+        call params%get('bc-left-u-type', bc_left_u_type)
+        call params%get('bc-right-u-type', bc_right_u_type)
+        if (bc_left_u_type(i)) n = n + 1
+        if (bc_right_u_type(i)) n = n + 1
+        allocate(this%bc_dir(i)%index(n))
+        !allocate(this%bc_dir(i)%value(n))  ! allocated by set_boundary_values
+        n = 0
+        if (bc_left_u_type(i)) then
+          n = n + 1
+          this%bc_dir(i)%index(n) = 1
+        end if
+        if (bc_right_u_type(i)) then
+          n = n + 1
+          this%bc_dir(i)%index(n) = this%nnode
+        end if
+      end do
+      n = 0
+      call params%get('bc-left-x-type', bc_left_x_type)
+      call params%get('bc-right-x-type', bc_right_x_type)
+      if (bc_left_x_type) n = n + 1
+      if (bc_right_x_type) n = n + 1
+      allocate(this%bc_dir(this%nvars)%index(n))
+      !allocate(this%bc_dir(this%nvars)%value(n))  ! allocated by set_boundary_values
+      n = 0
+      if (bc_left_x_type) then
+        n = n + 1
+        this%bc_dir(this%nvars)%index(n) = 1
+      end if
+      if (bc_right_x_type) then
+        n = n + 1
+        this%bc_dir(this%nvars)%index(n) = this%nnode
+      end if
+    end block
+
+  end subroutine init
+
+  !! The Dirichlet boundary values are not specified explicitly by the BC input
+  !! variables, but are instead copied from the initial conditions.
+
+  subroutine set_boundary_values(this, u)
+    class(mfe_model), intent(inout) :: this
+    type(mfe1_vector), intent(in) :: u
+    integer :: i, j, n
+    do i = 1, size(this%bc_dir)
+      allocate(this%bc_dir(i)%value(size(this%bc_dir(i)%index)))
+      do j = 1, size(this%bc_dir(i)%index)
+        n = this%bc_dir(i)%index(j)
+        this%bc_dir(i)%value(j) = u%array(i,n)
+      end do
+    end do
   end subroutine
 
-  subroutine alloc_vector(this, vec)
-    use mfe1_vector_type
-    class(mfe_model), intent(in) :: this
-    class(vector), allocatable, intent(out) :: vec
-    type(mfe1_vector), allocatable :: tmp
-    allocate(tmp)
-    call tmp%init(NEQNS, this%nnode)
-    call move_alloc(tmp, vec)
-  end subroutine
-  
-  subroutine compute_f(this, t, u, udot, f)
-    use mfe_procs, only: eval_residual
-    class(mfe_model) :: this
-    real(r8), intent(in)  :: t
-    class(vector), intent(inout) :: u, udot
-    class(vector), intent(inout) :: f
-    call stop_timer('integration')
-    call start_timer('compute_f')
-    select type (u)
-    class is (mfe1_vector)
-      select type (udot)
-      class is (mfe1_vector)
-        select type (f)
-        class is (mfe1_vector)
-          call eval_residual(u, udot, t, f)
-        end select
-      end select
-    end select
-    call stop_timer('compute_f')
-    call start_timer('integration')
-  end subroutine
-  
-  subroutine apply_precon(this, t, u, f)
-    use mfe_procs, only: apply_inverse_jacobian
-    class(mfe_model) :: this
+  subroutine eval_residual(this, u, udot, t, r)
+
+    class(mfe_model), intent(inout) :: this
+    type(mfe1_vector), intent(in) :: u, udot
+    type(mfe1_vector), intent(inout) :: r
     real(r8), intent(in) :: t
-    class(vector), intent(inout) :: u
-    class(vector), intent(inout) :: f
-    call stop_timer('integration')
-    call start_timer('apply_precon')
-    select type (f)
-    class is (mfe1_vector)
-      call apply_inverse_jacobian(f)
-    end select
-    call stop_timer('apply_precon')
-    call start_timer('integration')
-  end subroutine
-  
-  subroutine compute_precon(this, t, u, udot, dt)
-    use mfe_procs, only: eval_jacobian
-    class(mfe_model) :: this
-    real(r8), intent(in)  :: t, dt
-    class(vector), intent(inout) :: u, udot
-    integer :: stat
-    call stop_timer('integration')
-    call start_timer('compute_precon')
-    select type (u)
-    class is (mfe1_vector)
-      select type (udot)
-      class is (mfe1_vector)
-        call eval_jacobian(u, udot, t, dt, stat)
-        INSIST(stat == 0)
-      end select
-    end select
-    call stop_timer('compute_precon')
-    call start_timer('integration')
-  end subroutine
-  
-  subroutine du_norm(this, u, du, error)
-    use norm_procs, only: eval_norm
-    class(mfe_model) :: this
-    class(vector), intent(in) :: u, du
-    real(r8), intent(out) :: error
-    call stop_timer('integration')
-    call start_timer('du_norm')
-    select type (u)
-    class is (mfe1_vector)
-      select type (du)
-      class is (mfe1_vector)
-        error = eval_norm(du, 0)
-      end select
-    end select
-    call stop_timer('du_norm')
-    call start_timer('integration')
-  end subroutine
-  
-  subroutine check_state (this, u, stage, stat)
-    use norm_procs, only: check_soln
-    class(mfe_model) :: this
-    class(vector), intent(in) :: u
-    integer, intent(in)  :: stage
-    integer, intent(out) :: stat
-    call stop_timer('integration')
-    call start_timer('check_state')
-    select type (u)
-    class is (mfe1_vector)
-      call check_soln(u, stage, stat)
-    end select
-    call stop_timer('check_state')
-    call start_timer('integration')
-  end subroutine
-  
+
+    integer :: j, k, n
+    real(r8) :: diag(this%disc%neqns+1,this%disc%neqns+1,u%nnode)
+
+    call this%disc%update(u, udot)
+    call this%disc%compute_local_residual(t)
+    call this%disc%assemble_vector(r)
+
+    !! BC modifications
+    do k = 1, size(this%bc_dir)
+      do j = 1, size(this%bc_dir(k)%index)
+        n = this%bc_dir(k)%index(j)
+        r%array(k,n) = u%array(k,n) - this%bc_dir(k)%value(j)
+      end do
+    end do
+
+    !! Mass matrix block diagonal
+    call this%disc%eval_mass_matrix(diag_only=.true.)
+    call this%disc%assemble_diagonal(diag)
+
+    !! BC modifications to diagonal
+    do k = 1, size(this%bc_dir)
+      do j = 1, size(this%bc_dir(k)%index)
+        n = this%bc_dir(k)%index(j)
+        diag(:,k,n) = 0.0_r8
+        diag(k,:,n) = 0.0_r8
+        diag(k,k,n) = 1.0_r8
+      end do
+    end do
+
+    !! Multiply by the inverse of the block diagonal
+    call vfct(diag)
+    call vslv(diag, r%array)
+
+  end subroutine eval_residual
+
+
+  subroutine eval_udot(this, u, t, udot, errc)
+
+    class(mfe_model), intent(inout) :: this
+    type(mfe1_vector), intent(in) :: u
+    type(mfe1_vector), intent(inout) :: udot
+    real(r8), intent(in) :: t
+    integer, intent(out) :: errc
+
+    integer :: i, j, n
+    type(btd_matrix) :: a ! mass matrix
+
+    call this%disc%update(u)
+    errc = 0
+
+    !! Mass matrix
+    call this%disc%eval_mass_matrix
+    call a%init(NVARS, u%nnode)
+    call this%disc%assemble_matrix(a)
+
+    !! Right hand side
+    call this%disc%pde_rhs(t)
+    call this%disc%reg_rhs
+    call this%disc%assemble_vector(udot)
+
+    !! BC modifications
+    do i = 1, size(this%bc_dir)
+      do j = 1, size(this%bc_dir(i)%index)
+        n = this%bc_dir(i)%index(j)
+        call a%set_dir_var(i, n)
+        udot%array(i,n) = 0.0_r8
+      end do
+    end do
+
+    !! Solve for du/dt
+    call a%factor
+    call a%solve(udot%array)
+
+  end subroutine eval_udot
+
 end module mfe_model_type

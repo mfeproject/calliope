@@ -1,19 +1,16 @@
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!
-!!  MFE1 --
+!!  MFE1
 !!
-!!  This is a Fortran 90 implementation of the piecewise-linear
-!!  Gradient-Weighted Moving Finite Element Method (GWMFE) for
-!!  time-dependent systems of partial differential equations in
-!!  one space dimension.
+!!  This is an implementation of the piecewise-linear Gradient-Weighted
+!!  Moving Finite Element Method (GWMFE) for time-dependent systems of
+!!  partial differential equations in one space dimension.
 !!
-!!  Version 0.3, 12 August 1997
-!!
-!!  Neil N. Carlson, Dept of Math, Purdue University
+!!  Neil N. Carlson <neil.n.carlson@gmail.com>
 !!
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 !!
-!! Copyright (c) 1997, Neil N. Carlson
+!! Copyright (c) 2023, Neil N. Carlson
 !!
 !! Permission is hereby granted, free of charge, to any person obtaining a
 !! copy of this software and associated documentation files (the "Software"),
@@ -37,42 +34,23 @@
 
 program mfe1
 
-  use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use mfe_constants
-  use mfe1_vector_type
+  use mfe_constants, only: neqns
+  use mfe_sim_type
   use common_io
-  use output
-  use initialize
-  !use mfe_ode_solver
-  use idaesol_type
-  use mfe_model_type
+  use initialize, only: read_input
   use parameter_list_type
-  use mfe_procs, only: eval_udot
   use,intrinsic :: iso_fortran_env, only: output_unit, error_unit
   use timer_tree_type
   implicit none
 
-  real(r8) :: t
-  real(r8) :: rvar(6)
-  integer :: mode, rtype, i, j, errc, debug_unit, nstep
-  integer :: ivar(3)
-  type(mfe1_vector) :: u, udot
-  real(r8), allocatable :: uflat(:), udotflat(:)
-  type(idaesol) :: solver
-  type(mfe_model), target :: model
-  type(parameter_list) :: params
-
-  character(len=16) :: string
+  integer :: i, stat
   character(255) :: arg
-  character(:), allocatable :: prog, infile
-
-  real :: cpusec, cpusec0
+  character(:), allocatable :: prog, infile, errmsg
+  type(parameter_list) :: params
+  type(mfe_sim), target :: sim
 
   call start_timer('simulation')
   call start_timer('initialization')
-  call cpu_time (cpusec0)
-
-  ! Open the input and output files.
 
   call get_command_argument(0, arg)
   i = scan(arg, '/', back=.true.)
@@ -86,165 +64,19 @@ program mfe1
   call get_command_argument(1,arg)
   infile = trim(arg)
 
-  open (newunit=input_unit, file=infile, position="rewind", action="read", status="old")
+  open(newunit=input_unit, file=infile, position='rewind', action='read', status='old')
+  open(newunit=log_unit, file='mfelog', position='rewind', action='write', status='replace')
+  open(newunit=out_unit, file='mfegrf', position='rewind', action='write', status='replace')
 
-  open (newunit=log_unit, file="mfelog", position="rewind", action="write", status="replace")
+  call read_input(params)
 
-  open (newunit=out_unit, file="mfegrf", position="rewind", action="write", status="replace")
-
-  call read_soln (u, udot)
-  call read_data ()
-
-!do j = 1, size(u)
-!  write(*,*) u(j)%u, u(j)%x
-!end do
-
-  t = tout(1)
-  !mode = START_SOLN
-  call eval_udot (u, t, udot, errc)
-  call write_soln (u, t)
-  j = 2
-
-  if (errc /= 0) then
-    call abort ( (/log_unit,error_unit/), "Bad initial solution.")
-  end if
-
-  if (mstep <= 0) then
-    stop
-  end if
-!write(output_unit,'(a)') 'U: ' // u%checksum()
-!write(output_unit,'(a)') 'UDOT: ' // udot%checksum()
-
-!block
-!  use secure_hash_factory
-!  class(secure_hash), allocatable :: hash
-!  call new_secure_hash (hash, 'md5')
-!  call hash%update (uflat)
-!  write(output_unit,'(a)') 'U: ' // hash%hexdigest()
-!  call hash%update (udotflat)
-!  write(output_unit,'(a)') 'UDOT: ' // hash%hexdigest()
-!end block
-
-  call params%set ('nlk-max-iter', mitr)
-  call params%set ('nlk-ntol', ntol)
-  call params%set ('nlk-max-vec', mvec)
-  call params%set ('nlk-vec-tol', vtol)
-
-  call model%init (u%nnode)
-  call solver%init (model, params)
-  call solver%set_initial_state (t, u, udot)
-
-  if (debug /= 0) then
-    open (newunit=debug_unit, file="bdfout", action="write", status="replace")
-    !call set_solver_messages (debug, debug_unit)
-    call solver%set_verbose_stepping (debug_unit)
-  end if
-
-  rvar(1) = h
-  rvar(2) = hlb
-  rvar(3) = hub
-  !rvar(4) = ntol
-  !rvar(5) = margin ! not used
-  !rvar(6) = vtol
-
-  ivar(1) = mtry
-  !ivar(2) = mitr
-  !ivar(3) = mvec
-
-  write(unit=string, fmt="(es11.3)") t
-  call info ([log_unit, output_unit], "BEGINNING SOLUTION AT T = " // string)
-
-  if (ofreq <= 0) then
-    ofreq = mstep
-  end if
+  call sim%init(neqns, params, stat, errmsg)
+  if (stat /= 0) call abort([log_unit, error_unit], errmsg)
   call stop_timer('initialization')
 
-  do
-
-    !call bdf2_solver (mode, rvar, ivar, tout(j), ofreq, rtype, u, udot, t)
-
-    call start_timer('integration')
-    call solver%get_metrics (nstep=nstep)
-    call solver%integrate (h, rtype, ofreq-modulo(nstep,ofreq), tout(j), hlb, hub, mtry)
-    call stop_timer('integration')
-
-    !mode = RESUME_SOLN
-
-    call start_timer('output')
-    t = solver%last_time()
-    call cpu_time (cpusec)
-    cpusec = cpusec - cpusec0
-    !call write_soln (u, t)
-        call solver%write_metrics (log_unit)
-        call solver%write_metrics (output_unit)
-
-    select case (rtype)
-
-      !case (SOLN_AT_TOUT)       ! Integrated to TOUT.
-      case (SOLVED_TO_TOUT)       ! Integrated to TOUT.
-        call solver%get_interpolated_state (tout(j), u)
-        call write_soln (u, tout(j))
-        !call write_status ([log_unit, output_unit], cpusec, t)
-        j = j + 1
-
-      !case (SOLN_AT_STEP)       ! Integrated OFREQ more steps.
-      case (SOLVED_TO_NSTEP)       ! Integrated OFREQ more steps.
-        call solver%get_last_state_copy (u)
-        call write_soln (u, t)
-        !call write_status ([log_unit, output_unit], cpusec)
-
-      !case (FAIL_ON_STEP)
-      case (STEP_FAILED)
-        call solver%get_last_state_copy (u)
-        call write_soln (u, t)
-        !call write_status ([log_unit, output_unit], cpusec)
-        call abort ([log_unit, error_unit], "Repeated failure at a step.")
-
-      !case (SMALL_H_FAIL)
-      case (STEP_SIZE_TOO_SMALL)
-        call solver%get_last_state_copy (u)
-        call write_soln (u, t)
-        !call write_status ([log_unit, output_unit], cpusec)
-        call abort ([log_unit, error_unit], "Next time step is too small.")
-
-      !case (FAIL_ON_START)
-      case (BAD_INPUT)
-        call solver%get_last_state_copy (u)
-        call write_soln (u, t)
-        !call write_status ([log_unit, output_unit], cpusec)
-        call abort ([log_unit, error_unit], "Bad input.")
-
-      case default
-        call solver%get_last_state_copy (u)
-        call write_soln (u, t)
-        !call write_status ([log_unit, output_unit], cpusec)
-        call abort ([log_unit, error_unit], "Unknown return type!")
-
-    end select
-    call stop_timer('output')
-
-    if (j > size(tout)) then
-      call info ([log_unit, output_unit], "Integrated to final TOUT.  Done.")
-      exit
-    end if
-
-    call solver%get_metrics (nstep=nstep)
-    if (nstep >= mstep) then
-      call info ([log_unit, output_unit], "Maximum number of steps taken.  Done.")
-      exit
-    end if
-
-  end do
+  call sim%run
 
   call stop_timer('simulation')
   call write_timer_tree(output_unit, 2)
-
-contains
-
-  subroutine checksum_nodevar (u, name)
-    type(mfe1_vector), intent(in) :: u
-    character(*), intent(in) :: name
-    write(output_unit,'(a)') name // ': ' // u%checksum()
-  end subroutine
 
 end program mfe1
