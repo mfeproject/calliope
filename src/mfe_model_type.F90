@@ -16,7 +16,6 @@ module mfe_model_type
   use btd_matrix_type
   use block_linear_solver
   use index_func_type
-  use common_io, only: element_info
   use timer_tree_type
   implicit none
   private

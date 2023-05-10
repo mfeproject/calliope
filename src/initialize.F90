@@ -23,7 +23,7 @@ module initialize
   real(r8), allocatable :: tout(:)
 
   ! MFE ODE solver parameters.
-  integer  :: mtry, mitr, mvec
+  integer  :: mitr, mvec
   real(r8) :: h, hlb, hub, ntol, margin, vtol
 
 contains
@@ -34,7 +34,7 @@ contains
 
     type(parameter_list), intent(inout) :: params
 
-    integer :: nseg, i, n, nout
+    integer :: nseg, nout
     integer, allocatable  :: niseg(:)
     real(r8), allocatable :: useg(:,:)
     integer :: bc_left_u_type(NEQNS), bc_right_u_type(NEQNS), bc_left_x_type, bc_right_x_type
@@ -141,7 +141,7 @@ contains
 
     write(log_unit,'(//a/)') 'P R O B L E M   S P E C I F I C   P A R A M E T E R S'
 
-    call read_problem_data
+    call read_problem_data(params%sublist('problem'))
 
   end subroutine read_input
 

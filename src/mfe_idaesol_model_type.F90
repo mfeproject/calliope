@@ -4,19 +4,20 @@ module mfe_idaesol_model_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use idaesol_type, only: idaesol_model
-  use mfe_constants, only: NEQNS, NVARS
+  use mfe_env_type
+  use mfe_constants, only: NEQNS
   use mfe_model_type
   use mfe_precon_type
   use vector_class
   use mfe1_vector_type
   use parameter_list_type
-  use common_io
   use timer_tree_type
   implicit none
   private
 
   type, extends(idaesol_model), public :: mfe_idaesol_model
     integer :: nnode
+    type(mfe_env), pointer :: env => null() ! reference only
     type(mfe_model), pointer :: model => null() ! reference only
     type(mfe_precon) :: precon
     real(r8) :: dxmin ! for check_state
@@ -35,19 +36,22 @@ module mfe_idaesol_model_type
 
 contains
 
-  subroutine init(this, model, params, stat, errmsg)
+  subroutine init(this, env, model, params, stat, errmsg)
 
     class(mfe_idaesol_model), intent(out) :: this
+    type(mfe_env), target, intent(in) :: env
     type(mfe_model), target, intent(in) :: model
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
+    this%env => env
+
     this%nnode = model%nnode
     this%model => model
     allocate(this%dx(this%nnode-1))
 
-    call this%precon%init(this%model)
+    call this%precon%init(this%env, this%model)
 
     call params%get('dxmin', this%dxmin, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
@@ -179,6 +183,8 @@ contains
 
   subroutine check_state(this, u, stage, stat)
 
+    use string_utilities, only: i_to_c
+
     class(mfe_idaesol_model) :: this
     class(vector), intent(in) :: u
     integer, intent(in)  :: stage
@@ -199,7 +205,7 @@ contains
 
       !TODO: return errmsg and let caller handle output?
       if (this%dx(loc) < this%dxmin) then
-        call element_info('CHECK_SOLN: BAD ELEMENT', loc)
+        call this%env%log%info('check_state: bad element ' // i_to_c(loc))
         stat = 1
       else
         stat = 0

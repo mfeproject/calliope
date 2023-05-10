@@ -581,11 +581,12 @@ contains
   end subroutine pde_rhs
 
 
-  subroutine eval_dfdy(this, t, errc)
+  subroutine eval_dfdy(this, t, stat, errmsg)
 
     class(mfe1_disc), intent(inout) :: this
     real(r8), intent(in) :: t
-    integer, intent(out) :: errc
+    integer, intent(out) :: stat
+    character(:), allocatable, intent(out) :: errmsg
 
     integer :: i, j, k, l
     real(r8) :: rh
@@ -600,7 +601,7 @@ contains
     do k = 1, 2
       do i = 1, this%neqns+1
         this%u(i,k,:) = this%u(i,k,:) + this%fdinc
-        call update_aux(this)
+        call update_aux(this) !TODO: should check for inverted cells (stat below)
         call this%compute_local_residual(t)
         this%u(i,k,:) = this%u(i,k,:) - this%fdinc
         do j = 1, this%ncell
@@ -611,7 +612,7 @@ contains
       end do
     end do
 
-    errc = 0
+    stat = 0
 
   end subroutine eval_dfdy
 

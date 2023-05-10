@@ -35,8 +35,9 @@
 program mfe1
 
   use mfe_constants, only: neqns
+  use mfe_env_type
   use mfe_sim_type
-  use common_io
+  use common_io, only: input_unit, log_unit
   use initialize, only: read_input
   use parameter_list_type
   use,intrinsic :: iso_fortran_env, only: output_unit, error_unit
@@ -48,6 +49,7 @@ program mfe1
   character(:), allocatable :: prog, infile, errmsg
   type(parameter_list) :: params
   type(mfe_sim), target :: sim
+  type(mfe_env), target :: env
 
   call start_timer('simulation')
   call start_timer('initialization')
@@ -61,22 +63,27 @@ program mfe1
     stop 1
   end if
 
+  open(newunit=env%log_unit, file='mfelog', position='rewind', action='write', status='replace')
+  open(newunit=env%grf_unit, file='mfegrf', position='rewind', action='write', status='replace')
+  call env%log%init([output_unit, log_unit], verbosity=VERB_NORMAL)
+  log_unit = env%log_unit
+
   call get_command_argument(1,arg)
   infile = trim(arg)
 
   open(newunit=input_unit, file=infile, position='rewind', action='read', status='old')
-  open(newunit=log_unit, file='mfelog', position='rewind', action='write', status='replace')
-  open(newunit=out_unit, file='mfegrf', position='rewind', action='write', status='replace')
 
   call read_input(params)
 
-  call sim%init(neqns, params, stat, errmsg)
-  if (stat /= 0) call abort([log_unit, error_unit], errmsg)
+  call sim%init(env, neqns, params, stat, errmsg)
+  if (stat /= 0) call env%log%fatal(errmsg)
   call stop_timer('initialization')
 
   call sim%run
 
   call stop_timer('simulation')
   call write_timer_tree(output_unit, 2)
+
+  call env%log%exit
 
 end program mfe1

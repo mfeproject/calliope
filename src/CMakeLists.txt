@@ -9,16 +9,18 @@ add_library(common OBJECT
   mfe1_solver_type.F90
   mfe1_vector_type.F90
   mfe_constants.F90
+  mfe_env_type.F90
   mfe_idaesol_model_type.F90
   mfe_model_type.F90
   mfe_precon_type.F90
   mfe_sim_type.F90
   nka_type.F90
-  output.F90
   problem_data.F90
   problem_init.F90
+  simlog_type.F90
   state_history_type.F90
   vector_class.F90
+  string_utilities.F90
   )
 
 target_link_libraries(common petaca)

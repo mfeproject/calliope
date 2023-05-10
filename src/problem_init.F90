@@ -10,7 +10,7 @@
 module problem_init
 
   use problem_data
-  use common_io
+  use common_io, only: read_tagged_data
   implicit none
   private
   
@@ -18,8 +18,11 @@ module problem_init
   
 contains
 
-  subroutine read_problem_data
+  subroutine read_problem_data(params)
+    use parameter_list_type
+    type(parameter_list), intent(inout) :: params
     call read_tagged_data(visc, 'PDE viscosity coefficient')
+    call params%set('visc', visc)
   end subroutine
 
 end module problem_init

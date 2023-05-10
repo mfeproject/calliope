@@ -15,14 +15,14 @@ module common_io
   implicit none
   private
 
-  public :: read_tagged_data, abort, info, element_info
+  public :: read_tagged_data
 
   interface read_tagged_data
      module procedure read_tagged_rval, read_tagged_rvec, read_tagged_rmtx, &
                       read_tagged_ival, read_tagged_ivec, read_tagged_char
   end interface
 
-  integer, public :: input_unit, log_unit, out_unit
+  integer, public :: input_unit, log_unit
 
 contains
 
@@ -144,12 +144,12 @@ contains
 
     if (iostat < 0) then
 
-      call abort([log_unit, error_unit], &
+      call abort([error_unit], &
       'End-of-file encountered while reading data from ' // trim(filename) // '.')
 
     else
 
-      call abort([log_unit, error_unit], &
+      call abort([error_unit], &
           'Error reading data from ' // trim(filename) // &
           '.  Part of last line: ' // tag // '.')
 
@@ -177,42 +177,7 @@ contains
 
     stop 1
 
-  end subroutine abort
-
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !!  INFO
- !!
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-  subroutine info(units, mesg)
-
-    integer, intent(in) :: units(:)
-    character(*), intent(in) :: mesg
-
-    integer :: j
-
-    do j = 1, size(units)
-      write(units(j),'(2a)') '** ', mesg
-    end do
-
-  end subroutine info
-
-
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
- !!
- !!  ELEMENT_INFO
- !!
- !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-
-  subroutine element_info(mesg, n)
-
-    character(*), intent(in) :: mesg
-    integer, intent(in) :: n
-
-    write(log_unit,'(/3a,i0,a)') '** ', mesg, ' (', n, ')'
-
-  end subroutine element_info
+  end subroutine
 
 end module common_io
 

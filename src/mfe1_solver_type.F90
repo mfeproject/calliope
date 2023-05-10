@@ -1,6 +1,7 @@
 module mfe1_solver_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
+  use mfe_env_type
   use idaesol_type
   use mfe_idaesol_model_type
   use mfe_model_type
@@ -10,6 +11,7 @@ module mfe1_solver_type
   private
 
   type, public :: mfe1_solver
+    type(mfe_env), pointer :: env => null() ! reference only
     type(mfe_idaesol_model) :: integ_model
     type(idaesol) :: integ
     type(mfe_model), pointer :: model => null()
@@ -33,9 +35,10 @@ module mfe1_solver_type
 
 contains
 
-  subroutine init(this, model, params, stat, errmsg)
+  subroutine init(this, env, model, params, stat, errmsg)
 
     class(mfe1_solver), intent(out), target :: this
+    type(mfe_env), intent(in), target :: env
     type(mfe_model), intent(inout), target :: model
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
@@ -44,9 +47,10 @@ contains
     logical :: flag
     integer :: lun
 
+    this%env => env
     this%model => model
 
-    call this%integ_model%init(this%model, params, stat, errmsg)
+    call this%integ_model%init(this%env, this%model, params, stat, errmsg)
     if (stat /= 0) return
     call this%integ%init(this%integ_model, params)
 

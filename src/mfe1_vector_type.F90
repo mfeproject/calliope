@@ -232,7 +232,6 @@ contains
     class(mfe1_vector), intent(in) :: x
     class(vector), intent(in) :: y
     real(r8) :: dp
-    integer :: i, j
     !call start_timer('vector%dot_')
     select type (y)
     class is (mfe1_vector)

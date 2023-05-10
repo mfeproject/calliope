@@ -1,6 +1,7 @@
 module mfe_sim_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
+  use mfe_env_type
   use mfe_model_type
   use mfe1_solver_type
   use mfe1_vector_type
@@ -9,6 +10,7 @@ module mfe_sim_type
   private
 
   type, public :: mfe_sim
+    type(mfe_env), pointer :: env => null() ! reference only
     type(mfe_model) :: model
     type(mfe1_solver) :: solver
     type(mfe1_vector) :: u
@@ -23,11 +25,12 @@ module mfe_sim_type
 
 contains
 
-  subroutine init(this, neqns, params, stat, errmsg)
+  subroutine init(this, env, neqns, params, stat, errmsg)
 
     use parameter_list_type
 
     class(mfe_sim), intent(out), target :: this
+    type(mfe_env), intent(in), target :: env
     integer, intent(in) :: neqns
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
@@ -35,6 +38,8 @@ contains
 
     integer :: nnode
     type(mfe1_vector) :: udot
+
+    this%env => env
 
     !! Generate the initial solution (includes the mesh)
     block
@@ -87,7 +92,7 @@ contains
     if (stat /= 0) return
     call this%model%set_boundary_values(this%u) ! get BV values from the initial solution
 
-    call this%solver%init(this%model, params, stat, errmsg)
+    call this%solver%init(this%env, this%model, params, stat, errmsg)
     if (stat /= 0) return
 
     call udot%init(this%u)
@@ -148,9 +153,7 @@ contains
 
   subroutine run(this) !, stat, errmsg)
 
-    use output, only: write_soln ! TEMPORARILY
-    use common_io ! TEMPORARILY
-    use,intrinsic :: iso_fortran_env, only: error_unit, output_unit
+    use,intrinsic :: iso_fortran_env, only: output_unit
 
     class(mfe_sim), intent(inout) :: this
     !integer, intent(out) :: stat
@@ -167,56 +170,55 @@ contains
     this%hlast = hnext
 
     write(string,'(es11.3)') t
-    call info([log_unit, output_unit], 'BEGINNING SOLUTION AT T = ' // string)
+    call this%env%log%info('BEGINNING SOLUTION AT T = ' // string)
 
-    call write_soln(this%u, t)
+    call write_soln(this%env%grf_unit, t, this%u)
 
     j = 2
     do
 
       call start_timer('integration')
       call this%solver%get_metrics(nstep=nstep)
-      !call this%solver%integrate(hnext, rtype, this%ofreq-modulo(nstep,this%ofreq), &
-      !    this%tout(j), this%hlb, this%hub, this%mtry)
       call integrate(this, this%ofreq-modulo(nstep,this%ofreq), this%tout(j), hnext, stat, errmsg)
       call stop_timer('integration')
 
       call start_timer('output')
       t = this%solver%last_time()
-      call this%solver%write_metrics(log_unit)
+      !TODO: use log%info for this
+      call this%solver%write_metrics(this%env%log_unit)
       call this%solver%write_metrics(output_unit)
 
       select case (stat)
       case (SOLVED_TO_TOUT)       ! Integrated to TOUT.
         call this%solver%get_interpolated_state(this%tout(j), this%u)
-        call write_soln(this%u, this%tout(j))
+        call write_soln(this%env%grf_unit, this%tout(j), this%u)
         j = j + 1
 
       case (SOLVED_TO_NSTEP)       ! Integrated OFREQ more steps.
         call this%solver%get_last_state_copy(this%u)
-        call write_soln(this%u, t)
+        call write_soln(this%env%grf_unit, t, this%u)
 
       case (STEP_FAILED, STEP_SIZE_TOO_SMALL)
         call this%solver%get_last_state_copy(this%u)
-        call write_soln(this%u, t)
-        call abort([log_unit, error_unit], errmsg)
+        call write_soln(this%env%grf_unit, t, this%u)
+        call this%env%log%fatal(errmsg)
 
       case default
         call this%solver%get_last_state_copy(this%u)
-        call write_soln(this%u, t)
-        call abort([log_unit, error_unit], 'Unknown return type!')
+        call write_soln(this%env%grf_unit, t, this%u)
+        call this%env%log%fatal('Unknown return type!')
 
       end select
       call stop_timer('output')
 
       if (j > size(this%tout)) then
-        call info([log_unit, output_unit], 'Integrated to final TOUT.  Done.')
+        call this%env%log%info('Integrated to final TOUT.  Done.')
         exit
       end if
 
       call this%solver%get_metrics(nstep=nstep)
       if (nstep >= this%mstep) then
-        call info([log_unit, output_unit], 'Maximum number of steps taken.  Done.')
+        call this%env%log%info('Maximum number of steps taken.  Done.')
         exit
       end if
 
@@ -270,6 +272,25 @@ contains
 
     end do
 
-  end subroutine
+  end subroutine integrate
+
+  subroutine write_soln(lun, t, u)
+
+    integer, intent(in) :: lun
+    real(r8), intent(in) :: t
+    type(mfe1_vector), intent(in) :: u
+
+    integer :: j
+    character(16) :: fmt
+
+    associate (x => u%array(u%neqns+1,:), uu => u%array(:u%neqns,:))
+      write(lun,'(a,es13.5)') 'TIME = ', t
+      write(fmt,'(a,i0,a)') '(', u%neqns+1, 'es17.8)'
+      do j = 1, u%nnode
+        write(lun,fmt) x(j), uu(:,j)
+      end do
+    end associate
+
+  end subroutine write_soln
 
 end module mfe_sim_type
