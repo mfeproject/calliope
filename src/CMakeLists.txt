@@ -1,7 +1,6 @@
 add_library(common OBJECT
   block_linear_solver.F90
   btd_matrix_type.F90
-  common_io.F90
   idaesol_type.F90
   index_func_type.F90
   initialize.F90
@@ -16,7 +15,6 @@ add_library(common OBJECT
   mfe_sim_type.F90
   nka_type.F90
   problem_data.F90
-  problem_init.F90
   simlog_type.F90
   state_history_type.F90
   vector_class.F90

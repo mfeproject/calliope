@@ -42,6 +42,8 @@ contains
 
   subroutine init(this, neqns, ncell, params, stat, errmsg)
 
+    use problem_data
+
     class(mfe1_disc), intent(out) :: this
     integer, intent(in) :: neqns, ncell
     type(parameter_list), intent(inout) :: params
@@ -110,6 +112,12 @@ contains
     if (this%fdinc <= 0.0) then
       stat = 1
       errmsg = ' fdinc <= 0.0'
+      return
+    end if
+
+    call problem_init(params%sublist('problem'), stat, errmsg)
+    if (stat /= 0) then
+      errmsg = 'error reading problem parameters: ' // errmsg
       return
     end if
 

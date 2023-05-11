@@ -43,10 +43,10 @@ test at present is the Sod shock tube problem, which runs the code and compares
 against reference results.
 
 ## Examples
-The `test/sod` directory contains an input file `mfein` for the Sod shock tube
-problem; see [1].  Assuming the executable `gas` is in your path,
+The `test/sod` directory contains an input file `mfein.json` for the Sod shock
+tube problem; see [1].  Assuming the executable `gas` is in your path,
 ```shell
-gas mfein
+gas mfein.json
 ```
 will run the problem. Diagnostic output is written to `mfelog` and the solution
 at a sequence of time steps is written to `mfegrf`. The format of this file is

@@ -37,17 +37,16 @@ program mfe1
   use mfe_constants, only: neqns
   use mfe_env_type
   use mfe_sim_type
-  use common_io, only: input_unit, log_unit
-  use initialize, only: read_input
   use parameter_list_type
   use,intrinsic :: iso_fortran_env, only: output_unit, error_unit
   use timer_tree_type
+  use parameter_list_json
   implicit none
 
-  integer :: i, stat
+  integer :: i, stat, lun
   character(255) :: arg
   character(:), allocatable :: prog, infile, errmsg
-  type(parameter_list) :: params
+  type(parameter_list), pointer :: params
   type(mfe_sim), target :: sim
   type(mfe_env), target :: env
 
@@ -65,15 +64,17 @@ program mfe1
 
   open(newunit=env%log_unit, file='mfelog', position='rewind', action='write', status='replace')
   open(newunit=env%grf_unit, file='mfegrf', position='rewind', action='write', status='replace')
-  call env%log%init([output_unit, log_unit], verbosity=VERB_NORMAL)
-  log_unit = env%log_unit
+  call env%log%init([output_unit, env%log_unit], verbosity=VERB_NORMAL)
 
   call get_command_argument(1,arg)
   infile = trim(arg)
 
-  open(newunit=input_unit, file=infile, position='rewind', action='read', status='old')
+  open(newunit=lun, file=infile, action='read', access='stream')
+  call parameter_list_from_json_stream(lun, params, errmsg)
+  close(lun)
+  if (.not.associated(params)) call env%log%fatal(errmsg)
 
-  call read_input(params)
+  call parameter_list_to_json(params, env%log_unit, real_fmt='g0.5')
 
   call sim%init(env, neqns, params, stat, errmsg)
   if (stat /= 0) call env%log%fatal(errmsg)

@@ -13,6 +13,18 @@ module problem_data
   implicit none
   private
   
+  public :: problem_init
+
   real(r8), public :: visc
-  
+
+contains
+
+  subroutine problem_init(params, stat, errmsg)
+    use parameter_list_type
+    type(parameter_list), intent(inout) :: params
+    integer, intent(out) :: stat
+    character(:), allocatable, intent(out) :: errmsg
+    call params%get('visc', visc, stat=stat, errmsg=errmsg)
+  end subroutine
+
 end module problem_data
