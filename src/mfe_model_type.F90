@@ -35,7 +35,7 @@ contains
 
   subroutine init(this, neqns, nnode, params, stat, errmsg)
     use parameter_list_type
-    class(mfe_model), intent(out) :: this
+    class(mfe_model), intent(out), target :: this
     integer, intent(in) :: neqns, nnode
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat

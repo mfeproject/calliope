@@ -5,6 +5,7 @@ add_library(common OBJECT
   index_func_type.F90
   initialize.F90
   mfe1_disc_type.F90
+  mfe1_disc_core_type.F90
   mfe1_solver_type.F90
   mfe1_vector_type.F90
   mfe_constants.F90
@@ -14,6 +15,8 @@ add_library(common OBJECT
   mfe_precon_type.F90
   mfe_sim_type.F90
   nka_type.F90
+  pde_class.F90
+  navier_stokes_type.F90
   problem_data.F90
   simlog_type.F90
   state_history_type.F90
