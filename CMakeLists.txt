@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20.2)
+cmake_minimum_required(VERSION 3.22)
 
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 
@@ -14,7 +14,10 @@ if(CMAKE_Fortran_COMPILER_ID MATCHES NAG)
 endif()
 
 # Disable assertions in release builds
-add_compile_definitions($<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>)
+add_compile_definitions(
+  $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>
+  $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:GNU_PR109846>
+)
 
 add_compile_options(
   $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:-fimplicit-none>

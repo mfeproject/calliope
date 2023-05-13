@@ -34,19 +34,24 @@ compiler before running `cmake` to ensure that CMake finds the correct compiler.
 The code works with the Intel oneAPI classic `ifort` compiler, GFortran 12.2,
 and NAG 7.1.
 
-For the purposes of development there is a single executable `gas` located in
-`build/src` that solves the 1D Navier-Stokes equations.
+This produces a single executable `mfe1` and several shared libraries (`*.so`
+files) located in `build/src`. When `mfe1` is executed it will load one of the
+shared libraries that provides procedures specific to a particular system of
+PDEs. For the current development effort there are just two: a scalar
+convection-diffusion equation, and the compressible Navier-Stokes equations.
 
 ## Testing
-From the `build` directory give the command `ctest` to run the tests. The only
-test at present is the Sod shock tube problem, which runs the code and compares
-against reference results.
+From the `build` directory give the command `ctest` to run the tests. The tests
+run the code and compares against reference results.
 
 ## Examples
-The `test/sod` directory contains an input file `mfein.json` for the Sod shock
-tube problem; see [1].  Assuming the executable `gas` is in your path,
+The `test/sod` and `test/boundary-layer` directories contain an input file
+`mfein.json` for the Sod shock tube problem and convection-diffusion boundary
+layer problems; see [1].  For the time being, you will need to set your
+`LD_LIBRARY_PATH` to the directory containing the shared libraries. Assuming
+the executable `mfe1` is in your path,
 ```shell
-gas mfein.json
+mfe1 mfein.json
 ```
 will run the problem. Diagnostic output is written to `mfelog` and the solution
 at a sequence of time steps is written to `mfegrf`. The format of this file is

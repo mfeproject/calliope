@@ -34,7 +34,6 @@
 
 program mfe1
 
-  use mfe_constants, only: neqns
   use mfe_env_type
   use mfe_sim_type
   use parameter_list_type
@@ -76,7 +75,7 @@ program mfe1
 
   call parameter_list_to_json(params, env%log_unit, real_fmt='g0.5')
 
-  call sim%init(env, neqns, params, stat, errmsg)
+  call sim%init(env, params, stat, errmsg)
   if (stat /= 0) call env%log%fatal(errmsg)
   call stop_timer('initialization')
 

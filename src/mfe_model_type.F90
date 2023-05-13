@@ -10,7 +10,6 @@
 module mfe_model_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use mfe_constants, only: NVARS
   use mfe1_vector_type
   use mfe1_disc_type
   use btd_matrix_type
@@ -23,7 +22,7 @@ module mfe_model_type
   type, public :: mfe_model
     integer :: neqns, nvars, ncell, nnode
     type(mfe1_disc) :: disc
-    type(index_func) :: bc_dir(NVARS)
+    type(index_func), allocatable :: bc_dir(:)
   contains
     procedure :: init
     procedure :: set_boundary_values
@@ -33,24 +32,28 @@ module mfe_model_type
 
 contains
 
-  subroutine init(this, neqns, nnode, params, stat, errmsg)
+  subroutine init(this, nnode, params, stat, errmsg)
+
     use parameter_list_type
-    class(mfe_model), intent(out) :: this
-    integer, intent(in) :: neqns, nnode
+
+    class(mfe_model), intent(out), target :: this
+    integer, intent(in) :: nnode
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
-    this%neqns = neqns
-    this%nvars = neqns + 1
+
     this%nnode = nnode
     this%ncell = nnode - 1
-    call this%disc%init(this%neqns, this%ncell, params, stat, errmsg)
+    call this%disc%init(this%ncell, params, stat, errmsg)
+    this%neqns = this%disc%neqns
+    this%nvars = this%neqns + 1
 
     block ! Initialize boundary conditions
       integer :: i, n
       logical, allocatable :: bc_left_u_type(:), bc_right_u_type(:)
       logical :: bc_left_x_type, bc_right_x_type
 
+      allocate(this%bc_dir(this%nvars))
       do i = 1, this%neqns
         n = 0
         call params%get('bc-left-u-type', bc_left_u_type)
@@ -164,7 +167,7 @@ contains
 
     !! Mass matrix
     call this%disc%eval_mass_matrix
-    call a%init(NVARS, u%nnode)
+    call a%init(this%nvars, this%nnode)
     call this%disc%assemble_matrix(a)
 
     !! Right hand side

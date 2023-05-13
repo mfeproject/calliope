@@ -1,0 +1,35 @@
+{
+  "pde-lib-file": "libconv-diff.so",
+  "nseg": 1,
+  "niseg": [20],
+  "useg": 
+    [[0.0000, 0.0]
+    ,[1.0000, 1.0]],
+  "bc-left-u-type": [true],
+  "bc-right-u-type": [true],
+  "bc-left-x-type": true,
+  "bc-right-x-type": true,
+  "eqw": [1.0000],
+  "kreg": 2,
+  "eltvsc": [0.25000E-08],
+  "segspr": [0.0000],
+  "dxmin": 0.0000,
+  "fdinc": 0.10000E-07,
+  "verbose-stepping": false,
+  "ofreq": 0,
+  "mstep": 2000,
+  "tout": [0.0, 0.2, 0.4, 0.6, 0.8, 1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 500.0],
+  "rtol": 0.10000,
+  "ptol": [0.10000E-03, 0.10000E-03],
+  "h": 1e-4,
+  "hlb": 1e-9,
+  "hub": 1e10,
+  "margin": 2.0000,
+  "nlk-ntol": 0.10000,
+  "nlk-max-iter": 4,
+  "nlk-vec-tol": 0.10000,
+  "nlk-max-vec": 3,
+  "problem": {
+    "visc": 1e-3
+  }
+}

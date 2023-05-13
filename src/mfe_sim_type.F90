@@ -25,56 +25,63 @@ module mfe_sim_type
 
 contains
 
-  subroutine init(this, env, neqns, params, stat, errmsg)
+  subroutine init(this, env, params, stat, errmsg)
 
     use parameter_list_type
 
     class(mfe_sim), intent(out), target :: this
     type(mfe_env), intent(in), target :: env
-    integer, intent(in) :: neqns
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
     integer :: nnode
+    integer,  allocatable :: niseg(:)
+    real(r8), allocatable :: useg(:,:)
     type(mfe1_vector) :: udot
 
     this%env => env
 
-    !! Generate the initial solution (includes the mesh)
-    block
+    !! Generate the initial discrete solution (includes the mesh)
+    call params%get('niseg', niseg, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (size(niseg) < 1) then
+      stat = 1
+      errmsg = 'niseg must be assigned at least 1 value'
+      return
+    else if (any(niseg < 1)) then
+      stat = 1
+      errmsg = 'niseg values must be > 0'
+      return
+    end if
+    nnode = sum(niseg) + 1
+    call params%get('useg', useg, stat=stat, errmsg=errmsg)
+    if (size(useg,2) /= size(niseg)+1) then
+      stat = 1
+      errmsg = 'wrong number of rows for useg'
+      return
+    else if (any(useg(1,2:) <= useg(1,1:size(niseg)))) then
+      stat = 1
+      errmsg = 'useg x coordinates not strictly increasing'
+      return
+    end if
+
+    call this%model%init(nnode, params, stat, errmsg)
+    if (stat /= 0) return
+
+    !! Ensure the initial solution is properly sized for the model
+    if (size(useg,dim=1) /= this%model%nvars) then
+      stat = 1
+      errmsg = 'wrong number of columns for useg'
+      return
+    end if
+
+    block !TODO: should the model have a method for creating a vector?
       use initialize, only: refine  !TODO: move into this module
-      integer,  allocatable :: niseg(:)
-      real(r8), allocatable :: useg(:,:)
-      call params%get('niseg', niseg, stat=stat, errmsg=errmsg)
-      if (stat /= 0) return
-      if (size(niseg) < 1) then
-        stat = 1
-        errmsg = 'niseg must be assigned at least 1 value'
-        return
-      else if (any(niseg < 1)) then
-        stat = 1
-        errmsg = 'niseg values must be > 0'
-        return
-      end if
-      call params%get('useg', useg, stat=stat, errmsg=errmsg)
-      if (size(useg,1) /= neqns+1) then
-        stat = 1
-        errmsg = 'wrong number of columns for useg'
-        return
-      else if (size(useg,2) /= size(niseg)+1) then
-        stat = 1
-        errmsg = 'wrong number of rows for useg'
-        return
-      else if (any(useg(1,2:) <= useg(1,1:size(niseg)))) then
-        stat = 1
-        errmsg = 'useg x coordinates not strictly increasing'
-        return
-      end if
-      nnode = sum(niseg) + 1
-      call this%u%init(neqns, nnode)
+      call this%u%init(this%model%neqns, nnode)
       call refine(useg, niseg, this%u)
     end block
+    call this%model%set_boundary_values(this%u) ! get BV values from the initial solution
 
     call params%get('tout', this%tout, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
@@ -87,10 +94,6 @@ contains
       errmsg = 'tout values must be strictly increasing'
       return
     end if
-
-    call this%model%init(neqns, nnode, params, stat, errmsg)
-    if (stat /= 0) return
-    call this%model%set_boundary_values(this%u) ! get BV values from the initial solution
 
     call this%solver%init(this%env, this%model, params, stat, errmsg)
     if (stat /= 0) return

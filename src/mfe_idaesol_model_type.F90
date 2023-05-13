@@ -5,7 +5,6 @@ module mfe_idaesol_model_type
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use idaesol_type, only: idaesol_model
   use mfe_env_type
-  use mfe_constants, only: NEQNS
   use mfe_model_type
   use mfe_precon_type
   use vector_class
@@ -198,7 +197,7 @@ contains
     select type (u)
     class is (mfe1_vector)
 
-      associate (x => u%array(NEQNS+1,:))
+      associate (x => u%array(u%neqns+1,:))
         this%dx = x(2:size(x)) - x(1:size(x)-1)
       end associate
       loc = minloc(this%dx, dim=1)

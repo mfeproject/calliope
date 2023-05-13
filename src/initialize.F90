@@ -10,7 +10,6 @@
 module initialize
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use mfe_constants
   implicit none
   private
 
@@ -26,19 +25,21 @@ contains
     real(r8), intent(in) :: x0(:,:)
     type(mfe1_vector), intent(inout) :: x
 
-    integer :: node, j, k
-    real(r8) :: dx, du(NEQNS)
+    integer :: node, j, k, neqns, nvars
+    real(r8) :: dx, du(x%neqns)
 
     node = 1
+    neqns = x%neqns
+    nvars = neqns+1
 
-    associate (xx => x%array(NEQNS+1,:), u => x%array(:NEQNS,:))
+    associate (xx => x%array(nvars,:), u => x%array(:neqns,:))
       do k = 1, size(n)
-        u(:,node) = x0(2:NVARS,k)
+        u(:,node) = x0(2:nvars,k)
         xx(node) = x0(1,k)
         node = node + 1
 
         dx = (x0(1,k+1) - x0(1,k)) / n(k)
-        du = (x0(2:NVARS,k+1) - x0(2:NVARS,k)) / n(k)
+        du = (x0(2:nvars,k+1) - x0(2:nvars,k)) / n(k)
 
         do j = 1, n(k) - 1
           xx(node) = xx(node-1) + dx
@@ -46,7 +47,7 @@ contains
           node = node + 1
         end do
       end do
-      u(:,node) = x0(2:NVARS,size(n)+1)
+      u(:,node) = x0(2:nvars,size(n)+1)
       xx(node) = x0(1,size(n)+1)
     end associate
 

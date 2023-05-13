@@ -1,4 +1,5 @@
 {
+  "pde-lib-file": "libnavier-stokes.so",
   "nseg": 6,
   "niseg": [6, 10, 15, 25, 10, 6],
   "useg": 
