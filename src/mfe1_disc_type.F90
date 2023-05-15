@@ -81,16 +81,20 @@ contains
       return
     end if
 
-    call params%get('eqw', this%eqw, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (size(this%eqw) /= this%neqns) then
-      stat = 1
-      errmsg = 'wrong number of values for eqw'
-      return
-    else if (any(this%eqw <= 0.0)) then
-      stat = 1
-      errmsg = 'eqw is <= 0.0'
-      return
+    if (this%neqns > 1) then
+      call params%get('eqw', this%eqw, default=spread(1.0_r8,dim=1,ncopies=this%neqns), stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      if (size(this%eqw) /= this%neqns) then
+        stat = 1
+        errmsg = 'wrong number of values for eqw'
+        return
+      else if (any(this%eqw <= 0.0)) then
+        stat = 1
+        errmsg = 'eqw is <= 0.0'
+        return
+      end if
+    else
+      this%eqw = [1.0_r8]
     end if
 
     call params%get('kreg', this%kreg, stat=stat, errmsg=errmsg)

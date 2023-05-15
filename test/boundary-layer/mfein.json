@@ -9,7 +9,7 @@
   "bc-right-u-type": [true],
   "bc-left-x-type": true,
   "bc-right-x-type": true,
-  "eqw": [1.0000],
+  //"eqw": [1.0000],
   "kreg": 2,
   "eltvsc": [0.25000E-08],
   "segspr": [0.0000],
