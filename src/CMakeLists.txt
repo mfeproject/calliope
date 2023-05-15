@@ -1,9 +1,9 @@
 set(SOURCE
   block_linear_solver.F90
   btd_matrix_type.F90
+  coord_grid_type.F90
   idaesol_type.F90
   index_func_type.F90
-  initialize.F90
   mfe1_disc_type.F90
   mfe1_solver_type.F90
   mfe1_vector_type.F90

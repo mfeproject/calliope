@@ -31,8 +31,8 @@ module mfe1_vector_type
     procedure :: norm2 => norm2_
     procedure :: checksum
     !! Additional procedures specific to this type
-    generic :: init => init_dim, init_mold
-    procedure, private :: init_dim, init_mold
+    generic :: init => init_dim, init_mold, init_arrays
+    procedure, private :: init_dim, init_mold, init_arrays
   end type
 
 contains
@@ -51,6 +51,16 @@ contains
     this%neqns = mold%neqns
     this%nnode = mold%nnode
     allocate(this%array, mold=mold%array)
+  end subroutine
+
+  subroutine init_arrays(this, x, u)
+    class(mfe1_vector), intent(out) :: this
+    real(r8), intent(in) :: x(:), u(:,:)
+    this%neqns = size(u,dim=1)
+    this%nnode = size(x)
+    allocate(this%array(1+this%neqns,this%nnode))
+    this%array(:this%neqns,:) = u
+    this%array(1+this%neqns,:) = x
   end subroutine
 
   subroutine clone1(this, clone)

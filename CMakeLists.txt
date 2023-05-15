@@ -20,6 +20,7 @@ add_compile_definitions(
 )
 
 add_compile_options(
+  $<$<COMPILE_LANG_AND_ID:Fortran,NAG>:-f2018>
   $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:-fimplicit-none>
   $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:-ffree-line-length-none>)
 

@@ -28,6 +28,7 @@ contains
   subroutine init(this, env, params, stat, errmsg)
 
     use parameter_list_type
+    use coord_grid_type
 
     class(mfe_sim), intent(out), target :: this
     type(mfe_env), intent(in), target :: env
@@ -36,51 +37,38 @@ contains
     character(:), allocatable, intent(out) :: errmsg
 
     integer :: nnode
-    integer,  allocatable :: niseg(:)
-    real(r8), allocatable :: useg(:,:)
+    real(r8), allocatable :: u_array(:,:)
+    type(coord_grid) :: grid
     type(mfe1_vector) :: udot
 
     this%env => env
 
-    !! Generate the initial discrete solution (includes the mesh)
-    call params%get('niseg', niseg, stat=stat, errmsg=errmsg)
+    call grid%init(params, 'useg', 'niseg', 'ratio', stat, errmsg)
     if (stat /= 0) return
-    if (size(niseg) < 1) then
-      stat = 1
-      errmsg = 'niseg must be assigned at least 1 value'
-      return
-    else if (any(niseg < 1)) then
-      stat = 1
-      errmsg = 'niseg values must be > 0'
-      return
-    end if
-    nnode = sum(niseg) + 1
-    call params%get('useg', useg, stat=stat, errmsg=errmsg)
-    if (size(useg,2) /= size(niseg)+1) then
-      stat = 1
-      errmsg = 'wrong number of rows for useg'
-      return
-    else if (any(useg(1,2:) <= useg(1,1:size(niseg)))) then
-      stat = 1
-      errmsg = 'useg x coordinates not strictly increasing'
-      return
-    end if
+
+    call grid%get_grid(u_array)
+    nnode = size(u_array,dim=2)
 
     call this%model%init(nnode, params, stat, errmsg)
     if (stat /= 0) return
 
     !! Ensure the initial solution is properly sized for the model
-    if (size(useg,dim=1) /= this%model%nvars) then
+    if (size(u_array,dim=1) /= this%model%nvars) then
       stat = 1
       errmsg = 'wrong number of columns for useg'
       return
     end if
 
-    block !TODO: should the model have a method for creating a vector?
-      use initialize, only: refine  !TODO: move into this module
-      call this%u%init(this%model%neqns, nnode)
-      call refine(useg, niseg, this%u)
-    end block
+    !TODO: this should be an optional check (e.g., motion by curvature)
+    if (any(u_array(1,2:) <= u_array(1,1:nnode-1))) then
+      stat = 1
+      errmsg = 'x coordinates not strictly increasing'
+      return
+    end if
+
+    !TODO: should the model have a method for creating a vector? and then set its values?
+    call this%u%init(x = u_array(1,:), u = u_array(2:,:))
+
     call this%model%set_boundary_values(this%u) ! get BV values from the initial solution
 
     call params%get('tout', this%tout, stat=stat, errmsg=errmsg)
