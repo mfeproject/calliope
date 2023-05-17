@@ -17,6 +17,7 @@ endif()
 add_compile_definitions(
   $<$<CONFIG:Release,RelWithDebInfo>:NDEBUG>
   $<$<COMPILE_LANG_AND_ID:Fortran,GNU>:GNU_PR109846>
+  $<$<COMPILE_LANG_AND_ID:Fortran,Intel>:INTEL_BUG20180222>
 )
 
 add_compile_options(

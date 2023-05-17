@@ -29,6 +29,9 @@ module mfe_sim_type
   end type
 
   type, extends(event_action) :: output_event
+#ifdef INTEL_BUG20180222
+    integer :: dummy = 1
+#endif
   end type
 
 contains
