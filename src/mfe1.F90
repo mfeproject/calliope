@@ -79,10 +79,11 @@ program mfe1
   if (stat /= 0) call env%log%fatal(errmsg)
   call stop_timer('initialization')
 
-  call sim%run
+  call sim%run(stat, errmsg)
 
   call stop_timer('simulation')
   call write_timer_tree(output_unit, 2)
+  if (stat /= 0) call env%log%fatal(errmsg)
 
   call env%log%exit
 

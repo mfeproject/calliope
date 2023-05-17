@@ -142,128 +142,126 @@ contains
   end subroutine init
 
 
-  subroutine run(this) !, stat, errmsg)
+  subroutine run(this, stat, errmsg)
 
     use,intrinsic :: iso_fortran_env, only: output_unit
 
     class(mfe_sim), intent(inout) :: this
-    !integer, intent(out) :: stat
-    !character(:), allocatable, intent(out) :: errmsg
+    integer, intent(out) :: stat
+    character(:), allocatable, intent(out) :: errmsg
 
-    integer :: j, nstep, stat
-    real(r8) :: t, hnext
+    integer :: j, nstep
+    real(r8) :: t, hnext, t_write, t_hard, t_soft
     character(16) :: string
-    character(:), allocatable :: errmsg
+    logical :: write_diag
+
+    call start_timer('integration')
 
     t = this%solver%last_time()
     this%tlast = t
     hnext = this%dt_init
     this%hlast = hnext
 
-    write(string,'(es11.3)') t
-    call this%env%log%info('BEGINNING SOLUTION AT T = ' // string)
+    call this%env%log%info('')
+    write(string,'(g0.6)') t
+    call this%env%log%info('Starting integration at t = ' // trim(string))
 
     call write_soln(this%env%grf_unit, t, this%u)
+    t_write = t
+    write_diag = .false.
 
     j = 2
+    if (j <= size(this%tout)) then
+      t_soft = this%tout(j)
+    else
+      t_soft = huge(t_soft)
+    end if
+
+    stat = 0
+    nstep = 0
     do
 
-      call start_timer('integration')
-      call this%solver%get_metrics(nstep=nstep)
-      call integrate(this, this%ofreq-modulo(nstep,this%ofreq), this%tout(j), hnext, stat, errmsg)
-      call stop_timer('integration')
+      !! PER STEP ACTIONS
+      if (nstep > 0) then
+        if (mod(nstep,this%ofreq) == 0 .and. t_write /= t) then
+          call this%solver%get_last_state_copy(this%u)  !TODO: get view?
+          call write_soln(this%env%grf_unit, t, this%u)
+          t_write = t
+        end if
+        if (write_diag) then
+          !TODO: use log%info for this
+          call this%solver%write_metrics(this%env%log_unit)
+          call this%solver%write_metrics(output_unit)
+          write_diag = .false.
+        end if
+      end if
 
-      call start_timer('output')
-      t = this%solver%last_time()
-      !TODO: use log%info for this
-      call this%solver%write_metrics(this%env%log_unit)
-      call this%solver%write_metrics(output_unit)
-
-      select case (stat)
-      case (SOLVED_TO_TOUT)       ! Integrated to TOUT.
-        call this%solver%get_interpolated_state(this%tout(j), this%u)
-        call write_soln(this%env%grf_unit, this%tout(j), this%u)
-        j = j + 1
-
-      case (SOLVED_TO_NSTEP)       ! Integrated OFREQ more steps.
-        call this%solver%get_last_state_copy(this%u)
-        call write_soln(this%env%grf_unit, t, this%u)
-
-      case (STEP_FAILED, STEP_SIZE_TOO_SMALL)
-        call this%solver%get_last_state_copy(this%u)
-        call write_soln(this%env%grf_unit, t, this%u)
-        call this%env%log%fatal(errmsg)
-
-      case default
-        call this%solver%get_last_state_copy(this%u)
-        call write_soln(this%env%grf_unit, t, this%u)
-        call this%env%log%fatal('Unknown return type!')
-
-      end select
-      call stop_timer('output')
-
-      if (j > size(this%tout)) then
-        call this%env%log%info('Integrated to final TOUT.  Done.')
+      if (nstep == this%mstep) then
+        stat = 0
+        errmsg = 'completed maximum number of time steps'
         exit
       end if
 
-      call this%solver%get_metrics(nstep=nstep)
-      if (nstep >= this%mstep) then
-        call this%env%log%info('Maximum number of steps taken.  Done.')
+      if (stat < 0) then
+        if (this%tlast /= t_write) then
+          call this%solver%get_last_state_copy(this%u)
+          call write_soln(this%env%grf_unit, this%tlast, this%u)
+          call this%solver%write_metrics(this%env%log_unit)
+          call this%solver%write_metrics(output_unit)
+        end if
         exit
       end if
 
-    end do
-
-  end subroutine run
-
-!TODO: handle ofreq output in integrate
-
-  subroutine integrate(this, nstep, tout, hnext, stat, errmsg)
-
-    class(mfe_sim), intent(inout) :: this
-    integer, intent(in) :: nstep
-    real(r8), intent(in) :: tout
-    real(r8), intent(inout) :: hnext
-    integer, intent(out) :: stat
-    character(:), allocatable, intent(out) :: errmsg
-
-    integer :: step
-    real(r8) :: t
-
-    step = 0
-    do
-
-      !! Check for a normal return !TODO: move to end of loop?
-      if (tout <= this%tlast) then
-        stat = SOLVED_TO_TOUT
-        return
-      else if (step >= nstep) then
-        stat = SOLVED_TO_NSTEP
-        return
+      t_hard = huge(t_hard)
+      if (t_soft == huge(t_soft) .and. t_hard == huge(t_hard)) then
+        stat = 0
+        write(string,'(g0.6)') t
+        call this%env%log%info('')
+        call this%env%log%info('completed integration to final time t = ' // trim(string))
+        exit
       end if
+      t = t + hnext
+      nstep = nstep + 1
 
-      step = step + 1
-
-      t = this%tlast + hnext
       call this%solver%advance(this%hlb, this%mtry, t, this%u, hnext, stat)
-      select case (stat)
+      select case (stat)!TODO: idaessol should return the message string itself
       case (STEP_SIZE_TOO_SMALL)
-        errmsg = 'next time step size is too small'
-        return
+        stat = -1
+        errmsg = 'integration failure: next time step size is too small'
+        cycle
       case (STEP_FAILED)
-        errmsg = 'time step failed'
-        return
+        stat = -1
+        errmsg = 'integration failure: time step unsuccessful after repeated attempts'
+        cycle
       end select
-      !TODO: idaessol should return the message string itself
 
       this%hlast = t - this%tlast
       this%tlast = t
       hnext = min(hnext, this%hub)
 
+      do while (t >= t_soft)
+        !! HANDLE SOFT EVENT ACTIONS AT T_SOFT
+        call this%solver%get_interpolated_state(t_soft, this%u)
+        call write_soln(this%env%grf_unit, t_soft, this%u)
+        t_write = t_soft
+        write_diag = .true.
+        j = j + 1
+        if (j <= size(this%tout)) then
+          t_soft = this%tout(j)
+        else
+          t_soft = huge(t_soft)
+        end if
+      end do
+
+      if (t == t_hard) then
+        !! HANDLE HARD EVENT ACTIONS AT T_HARD
+      end if
+
     end do
 
-  end subroutine integrate
+    call stop_timer('integration')
+
+  end subroutine run
 
   subroutine write_soln(lun, t, u)
 
