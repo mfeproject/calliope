@@ -8,6 +8,7 @@ module mfe_sim_type
   use mfe1_solver_type
   use mfe1_vector_type
   use sim_event_queue_type
+  use time_step_sync_type
   use timer_tree_type
   implicit none
   private
@@ -18,6 +19,7 @@ module mfe_sim_type
     type(mfe1_solver) :: solver
     type(mfe1_vector) :: u
     type(sim_event_queue) :: hard_eventq, soft_eventq
+    type(time_step_sync) :: ts_sync
     real(r8) :: tlast, hlast
     real(r8) :: dt_init
     integer :: ofreq, mstep
@@ -42,9 +44,9 @@ contains
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
-    integer :: nnode, j
+    integer :: nnode, itmp
     real(r8) :: t_init
-    real(r8), allocatable :: u_array(:,:), tout(:)
+    real(r8), allocatable :: u_array(:,:)
     type(coord_grid) :: grid
     type(mfe1_vector) :: udot
 
@@ -61,14 +63,14 @@ contains
 
     !! Ensure the initial solution is properly sized for the model
     if (size(u_array,dim=1) /= this%model%nvars) then
-      stat = 1
+      stat = -1
       errmsg = 'wrong number of columns for useg'
       return
     end if
 
     !TODO: this should be an optional check (e.g., motion by curvature)
     if (any(u_array(1,2:) <= u_array(1,1:nnode-1))) then
-      stat = 1
+      stat = -1
       errmsg = 'x coordinates not strictly increasing'
       return
     end if
@@ -78,24 +80,29 @@ contains
 
     call this%model%set_boundary_values(this%u) ! get BV values from the initial solution
 
-    call params%get('tout', tout, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (size(tout) < 1) then
-      stat = 1
-      errmsg = 'tout must be assigned at least 1 values'
-      return
-    end if
+    block ! Solution output times
+      real(r8), allocatable :: rarray(:)
+      integer :: j
+      call params%get('output-times', rarray, stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      if (size(rarray) < 1) then
+        stat = -1
+        errmsg = '"output-times" must be assigned at least 1 values='
+        return
+      end if
 
-    !! Add the output times to the soft event queue. The integrator will not
-    !! hit these times exactly but will output an interpolated solution
-    do j = 1, size(tout)
-      call this%soft_eventq%add_event(tout(j), output_event())
-    end do
+      !! Add the output times to the soft event queue. The integrator will not
+      !! hit these times exactly but will output an interpolated solution
+      do j = 1, size(rarray)
+        call this%soft_eventq%add_event(rarray(j), output_event())
+        !call this%hard_eventq%add_event(rarray(j), output_event()) ! WORKS AS EXPECTED
+      end do
+    end block
 
     call params%get('mstep', this%mstep, default=huge(this%mstep), stat=stat, errmsg=errmsg)
     if (stat /= 0) return
     if (this%mstep < 0) then
-      stat = 1
+      stat = -1
       errmsg = 'mstep must be >= 0'
       return
     end if
@@ -114,6 +121,15 @@ contains
       return
     end if
 
+    !! Look-ahead for hard events and associated time_step_sync object
+    call params%get('hard-event-lookahead', itmp, default=2, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (itmp < 1) then
+      stat = -1
+      errmsg = '"hard-event-lookahead" must be > 0'
+      return
+    end if
+    this%ts_sync = time_step_sync(itmp)
 
     call this%solver%init(this%env, this%model, params, stat, errmsg)
     if (stat /= 0) return
@@ -199,7 +215,6 @@ contains
         exit
       end if
 
-      t_hard = this%hard_eventq%next_time()
       if (this%hard_eventq%is_empty() .and. this%soft_eventq%is_empty()) then
         stat = 0
         write(string,'(g0.6)') t
@@ -207,7 +222,14 @@ contains
         call this%env%log%info('completed integration to final time t = ' // trim(string))
         exit
       end if
-      t = t + hnext
+
+      !! Time for next step; nominally TLAST+HNEXT but possibly adjusted
+      t_hard = this%hard_eventq%next_time()
+      if (this%hard_eventq%is_empty()) then
+        t = this%tlast + hnext
+      else
+        t = this%ts_sync%next_time(t_hard, this%tlast, this%hlast, hnext)
+      end if
       nstep = nstep + 1
 
       call this%solver%advance(t, this%u, hnext, stat, errmsg)

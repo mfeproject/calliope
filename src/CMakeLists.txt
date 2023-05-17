@@ -16,6 +16,7 @@ set(SOURCE
   sim_event_queue_type.F90
   simlog_type.F90
   state_history_type.F90
+  time_step_sync_type.F90
   vector_class.F90
   string_utilities.F90
   mfe1.F90
