@@ -13,6 +13,7 @@ set(SOURCE
   mfe_precon_type.F90
   mfe_sim_type.F90
   nka_type.F90
+  sim_event_queue_type.F90
   simlog_type.F90
   state_history_type.F90
   vector_class.F90

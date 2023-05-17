@@ -1,3 +1,5 @@
+#include "f90_assert.fpp"
+
 module mfe_sim_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
@@ -5,6 +7,7 @@ module mfe_sim_type
   use mfe_model_type
   use mfe1_solver_type
   use mfe1_vector_type
+  use sim_event_queue_type
   use timer_tree_type
   implicit none
   private
@@ -14,13 +17,16 @@ module mfe_sim_type
     type(mfe_model) :: model
     type(mfe1_solver) :: solver
     type(mfe1_vector) :: u
-    real(r8), allocatable :: tout(:)
+    type(sim_event_queue) :: hard_eventq, soft_eventq
     real(r8) :: tlast, hlast
     real(r8) :: dt_init
     integer :: ofreq, mstep
   contains
     procedure :: init
     procedure :: run
+  end type
+
+  type, extends(event_action) :: output_event
   end type
 
 contains
@@ -36,8 +42,9 @@ contains
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
-    integer :: nnode
-    real(r8), allocatable :: u_array(:,:)
+    integer :: nnode, j
+    real(r8) :: t_init
+    real(r8), allocatable :: u_array(:,:), tout(:)
     type(coord_grid) :: grid
     type(mfe1_vector) :: udot
 
@@ -71,29 +78,19 @@ contains
 
     call this%model%set_boundary_values(this%u) ! get BV values from the initial solution
 
-    call params%get('tout', this%tout, stat=stat, errmsg=errmsg)
+    call params%get('tout', tout, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
-    if (size(this%tout) < 2) then
+    if (size(tout) < 1) then
       stat = 1
-      errmsg = 'tout must be assigned at least 2 values'
-      return
-    else if (any(this%tout(2:) <= this%tout(1:size(this%tout)-1))) then
-      stat = 1
-      errmsg = 'tout values must be strictly increasing'
+      errmsg = 'tout must be assigned at least 1 values'
       return
     end if
 
-    call this%solver%init(this%env, this%model, params, stat, errmsg)
-    if (stat /= 0) return
-
-    call udot%init(this%u)
-    call this%model%eval_udot(this%u, this%tout(1), udot, stat)
-    if (stat /= 0) then
-      stat = 1
-      errmsg = 'failed to solve for the initial time derivative'
-      return
-    end if
-    call this%solver%set_initial_state(this%tout(1), this%u, udot)
+    !! Add the output times to the soft event queue. The integrator will not
+    !! hit these times exactly but will output an interpolated solution
+    do j = 1, size(tout)
+      call this%soft_eventq%add_event(tout(j), output_event())
+    end do
 
     call params%get('mstep', this%mstep, default=huge(this%mstep), stat=stat, errmsg=errmsg)
     if (stat /= 0) return
@@ -106,6 +103,9 @@ contains
     if (stat /= 0) return
     if (this%ofreq <= 0) this%ofreq = this%mstep
 
+    call params%get('t-init', t_init, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+
     call params%get('h-init', this%dt_init, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
     if (this%dt_init <= 0) then
@@ -113,6 +113,19 @@ contains
       errmsg = '"h-init" must be > 0'
       return
     end if
+
+
+    call this%solver%init(this%env, this%model, params, stat, errmsg)
+    if (stat /= 0) return
+
+    call udot%init(this%u)
+    call this%model%eval_udot(this%u, t_init, udot, stat)
+    if (stat /= 0) then
+      stat = 1
+      errmsg = 'failed to solve for the initial time derivative'
+      return
+    end if
+    call this%solver%set_initial_state(t_init, this%u, udot)
 
   end subroutine init
 
@@ -129,6 +142,8 @@ contains
     real(r8) :: t, hnext, t_write, t_hard, t_soft
     character(16) :: string
     logical :: write_diag
+    type(action_list), allocatable :: actions
+    class(event_action), allocatable :: action
 
     call start_timer('integration')
 
@@ -145,12 +160,9 @@ contains
     t_write = t
     write_diag = .false.
 
-    j = 2
-    if (j <= size(this%tout)) then
-      t_soft = this%tout(j)
-    else
-      t_soft = huge(t_soft)
-    end if
+    call this%hard_eventq%fast_forward(t)
+    call this%soft_eventq%fast_forward(t)
+    t_soft = this%soft_eventq%next_time()
 
     stat = 0
     nstep = 0
@@ -187,8 +199,8 @@ contains
         exit
       end if
 
-      t_hard = huge(t_hard)
-      if (t_soft == huge(t_soft) .and. t_hard == huge(t_hard)) then
+      t_hard = this%hard_eventq%next_time()
+      if (this%hard_eventq%is_empty() .and. this%soft_eventq%is_empty()) then
         stat = 0
         write(string,'(g0.6)') t
         call this%env%log%info('')
@@ -207,22 +219,41 @@ contains
       this%hlast = t - this%tlast
       this%tlast = t
 
-      do while (t >= t_soft)
-        !! HANDLE SOFT EVENT ACTIONS AT T_SOFT
-        call this%solver%get_interpolated_state(t_soft, this%u)
-        call write_soln(this%env%grf_unit, t_soft, this%u)
-        t_write = t_soft
-        write_diag = .true.
-        j = j + 1
-        if (j <= size(this%tout)) then
-          t_soft = this%tout(j)
-        else
-          t_soft = huge(t_soft)
-        end if
+      do while (t >= t_soft) ! HANDLE SOFT EVENT ACTIONS AT T_SOFT
+        call this%soft_eventq%pop_actions(actions)
+        do
+          call actions%get_next_action(action)
+          if (.not.allocated(action)) exit
+          select type (action)
+          type is (output_event)
+            call this%solver%get_interpolated_state(t_soft, this%u)
+            call write_soln(this%env%grf_unit, t_soft, this%u)
+            t_write = t_soft
+            write_diag = .true.
+          class default
+            INSIST(.false.)
+          end select
+        end do
+        t_soft = this%soft_eventq%next_time()
       end do
 
-      if (t == t_hard) then
-        !! HANDLE HARD EVENT ACTIONS AT T_HARD
+      if (t == t_hard) then ! HANDLE HARD EVENT ACTIONS AT T_HARD
+        call this%hard_eventq%pop_actions(actions)
+        do
+          call actions%get_next_action(action)
+          if (.not.allocated(action)) exit
+          select type (action)
+          type is (output_event)
+            if (t /= t_write) then
+              call this%solver%get_last_state_copy(this%u)
+              call write_soln(this%env%grf_unit, t, this%u)
+              t_write = t
+              write_diag = .true.
+            end if
+          class default
+            INSIST(.false.)
+          end select
+        end do
       end if
 
     end do
