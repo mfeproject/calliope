@@ -38,6 +38,7 @@ module idaesol_type
   use state_history_type
   use nka_type
   use vector_class
+  use string_utilities, only: i_to_c
   implicit none
   private
 
@@ -54,6 +55,8 @@ module idaesol_type
     real(r8) :: ntol = 0.1_r8       ! nonlinear solver error tolerance (relative to 1)
     type(nka), allocatable :: nka   ! nonlinear Krylov accelerator
     type(state_history) :: uhist    ! solution history structure
+    real(r8) :: h_min, h_max  !TODO: change to hmin, hmax after counters refactored
+    integer  :: max_try
 
     !! Persistent temporary workspace
     class(vector), allocatable :: u, u0, up
@@ -75,7 +78,6 @@ module idaesol_type
   contains
     procedure :: init
     procedure :: set_initial_state
-    procedure :: integrate
     procedure :: advance
     procedure :: step
     procedure :: commit_state
@@ -208,7 +210,7 @@ contains
       ', NPCF:NNR:NNF:NSR=', this%updpc_failed, &
       this%retried_bce, this%failed_bce, this%rejected_steps
   end subroutine write_metrics
-  
+
   subroutine get_metrics (this, nstep, hmin, hmax, counters)
     class(idaesol), intent(in) :: this
     integer, intent(out), optional :: nstep, counters(:)
@@ -239,31 +241,81 @@ contains
     this%verbose = .false.
   end subroutine set_quiet_stepping
 
-  subroutine init(this, model, params)
+  subroutine init(this, model, params, stat, errmsg)
 
     use parameter_list_type
 
     class(idaesol), intent(out) :: this
     class(idaesol_model), intent(in), target :: model
     type(parameter_list) :: params
+    integer, intent(out) :: stat
+    character(:), allocatable, intent(out) :: errmsg
 
     integer :: maxv
     real(r8) :: vtol
 
     this%model => model
 
-    call params%get ('nlk-max-iter', this%mitr, default=5)
-    INSIST(this%mitr > 1)
+    call params%get('nlk-max-iter', this%mitr, default=5, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (this%mitr < 1) then
+      stat = -1
+      errmsg = '"nlk-max-iter" must be >= 1'
+      return
+    end if
 
-    call params%get ('nlk-tol', this%ntol, default=0.1_r8)
-    INSIST(this%ntol > 0.0_r8 .and. this%ntol <= 1.0_r8)
+    call params%get('nlk-tol', this%ntol, default=0.1_r8, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (this%ntol <= 0 .or. this%ntol > 1) then
+      stat = -1
+      errmsg = '"nlk-tol" must be in (0,1]'
+      return
+    end if
 
-    call params%get ('nlk-max-vec', maxv, default=this%mitr-1)
-    INSIST(maxv > 0)
+    call params%get('nlk-max-vec', maxv, default=this%mitr-1, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (maxv <= 0) then
+      stat = -1
+      errmsg = '"nlk-max-vec" must be > 0'
+      return
+    end if
     maxv = min(maxv, this%mitr-1)
 
-    call params%get ('nlk-vec-tol', vtol, default=0.01_r8)
-    INSIST(vtol > 0.0_r8)
+    call params%get('nlk-vec-tol', vtol, default=0.01_r8, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (vtol <= 0) then
+      stat = -1
+      errmsg = '"nlk-vec-tol" must be > 0'
+      return
+    end if
+
+    call params%get('h-max', this%h_max, default=huge(this%h_max), stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (this%h_max <= 0) then
+      stat = -1
+      errmsg = '"h-max" must be > 0'
+      return
+    end if
+
+    call params%get('h-min', this%h_min, default=tiny(this%h_min), stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (this%h_min < 0) then
+      stat = -1
+      errmsg = '"h-min" must be >= 0'
+      return
+    else if (this%h_min > this%h_max) then
+      stat = -1
+      errmsg = '"h-min" must be <= "h-max"'
+      return
+    end if
+
+    call params%get('max-try', this%max_try, default=10, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (this%max_try < 1) then
+      stat = -1
+      errmsg = '"max-try" must be > 0'
+      return
+    end if
 
     call model%alloc_vector(this%u)
     call model%alloc_vector(this%u0)
@@ -296,140 +348,43 @@ contains
     this%seq = 0
   end subroutine set_initial_state
 
-  !! This driver subroutine integrates the system through multiple steps until
-  !! one of several events occur: the specified number of steps NSTEP have been
-  !! taken, the integration time has passed the target time TOUT, or a step can
-  !! not be taken that satisfies accuracy requirements or other conditions.  By
-  !! default the number of steps and target time are unlimited, but at least
-  !! one must be specified.  The time step size is constrained to the interval
-  !! [HMIN,HMAX].  A step failure occurs if the step size falls below HMIN. The
-  !! default for HMIN is the smallest postive real (tiny()), and the default
-  !! for HMAX is the largest postive real (huge()).  At most MTRY attempts to
-  !! take a step are allowed before a step failure occurs; the default is 10.
+  !! This advances the state by a single "robust" time step. The target time
+  !! for the step is T, but in the case of failure, the step size will be
+  !! repeatedly reduced until a successful step is achieved, or until a bound
+  !! is exceeded: either the minimum allowed step size or the maximum of
+  !! allowed attempts. If successful, STAT returns 0 and the time and solution
+  !! are committed as the current state, and also returned in T and U.  Note
+  !! that the returned value of T may differ from its input value.  HNEXT
+  !! returns the requested next step size. If the step is unsuccesful, STAT
+  !! returns a negative value and ERRMSG is assigned an explanatory message.
 
-  subroutine integrate(this, hnext, status, nstep, tout, hmin, hmax, mtry)
-
-    class(idaesol), intent(inout) :: this
-    real(r8), intent(inout) :: hnext
-    integer,  intent(out)   :: status
-    integer,  intent(in) :: nstep, mtry
-    real(r8), intent(in) :: tout, hmin, hmax
-    optional :: nstep, tout, hmin, hmax, mtry
-
-    integer  :: max_step, max_try, step, stat
-    real(r8) :: t, tlast, h, t_out, h_min, h_max
-
-    ASSERT(this%seq >= 0)
-
-   !!!
-   !!! PROCESS THE INPUT AND CHECK IT FOR CORRECTNESS
-
-    status = 0
-
-    !! Set the maximum number of time steps; default is unlimited.
-    max_step = huge(1)
-    if (present(nstep)) max_step = nstep
-    if (max_step < 1) status = BAD_INPUT
-
-    !! Set the target integration time; default is +infinity.
-    t_out = huge(1.0_r8)
-    if (present(tout)) t_out = tout
-    if (t_out <= this%uhist%last_time()) status = BAD_INPUT
-
-    !! Verify that at least one of NSTEP and TOUT were specified.
-    if (.not.present(nstep) .and. .not.present(tout)) status = BAD_INPUT
-
-    !! Set the bounds on the step size; default is none.
-    h_min = tiny(1.0_r8)
-    h_max = huge(1.0_r8)
-    if (present(hmin)) h_min = hmin
-    if (present(hmax)) h_max = hmax
-    if (h_min < 0.0_r8 .or. hnext < h_min .or. hnext > h_max) status = BAD_INPUT
-
-    !! Set the maximum number of attempts allowed for a step.
-    max_try = 10
-    if (present(mtry)) max_try = mtry
-    if (max_try < 1) status = BAD_INPUT
-
-    if (status == BAD_INPUT) return
-
-   !!!
-   !!! BEGIN TIME STEPPING
-
-    step = 0
-    do
-
-      h = hnext
-      tlast = this%uhist%last_time()
-      t = tlast + h
-
-      !! Check for a normal return before proceeding.
-      if (t_out <= tlast) then
-        status = SOLVED_TO_TOUT
-        return
-      end if
-      if (step >= max_step) then
-        status = SOLVED_TO_NSTEP
-        return
-      end if
-
-      step = step + 1
-
-      call advance (this, h_min, max_try, t, this%u, hnext, stat)
-      if (stat /= 0) then
-        status = STEP_FAILED
-        return
-      end if
-
-      !! Set the next step size.
-      hnext = min(h_max, hnext)
-      if (this%verbose) write(this%unit,fmt=1) hnext/h
-
-    end do
-
-    1 format(2x,'Changing H by a factor of ',f6.3)
-
-  end subroutine integrate
-
-  !! This auxiliary subroutine advances the state by a single time step.  The
-  !! target time for the step is T, but in the case of failure, the step size
-  !! will be repeatedly reduced until a successful step is achieved, or the
-  !! step size falls below HMIN, or the number of attempts exceeds MTRY.  If
-  !! successful (STAT==0), the solution and time are committed as the current
-  !! state, and also returned in U and T.  Note that the returned value of T
-  !! may differ from its input value.  HNEXT returns the requested next step
-  !! size. If the step size falls below HMIN, STAT returns STEP_SIZE_TOO_SMALL,
-  !! and if the number of attempts exceeds MTRY, STAT returns STEP_FAILED.
-  !! In these cases T and HNEXT return the time and step size that were to be
-  !! attemped.  This subroutine merely wraps STEP, which does the actual work,
-  !! with the strategy just outlined.
-
-  subroutine advance(this, hmin, mtry, t, u, hnext, stat)
+  subroutine advance(this, t, u, hnext, stat, errmsg)
 
     class(idaesol), intent(inout) :: this
-    real(r8), intent(in)    :: hmin
-    integer,  intent(in)    :: mtry
     real(r8), intent(inout) :: t
     class(vector), intent(inout) :: u
     real(r8), intent(out)   :: hnext
     integer,  intent(out)   :: stat
+    character(:), allocatable :: errmsg
 
     integer :: try
     real(r8) :: h
 
-    do try = 1, mtry
+    do try = 1, this%max_try
       !! Check for a too-small step size.
       h = t - this%uhist%last_time()
-      if (h < hmin) then
+      if (h < this%h_min) then
         hnext = h
         stat = STEP_SIZE_TOO_SMALL
+        errmsg = 'next time step size is too small'
         return
       end if
 
       !! Attempt a BDF2 step.
       call step (this, t, u, hnext, stat)
       if (stat == 0) then ! successful
-        call commit_state (this, t, u)
+        hnext = min(hnext, this%h_max)
+        call commit_state (this, t, u)  !TODO: Should the client have the responsibility of doing this?
         return
       else  ! failed; try again with the suggested step size.
         if (this%verbose) write(this%unit,fmt=1) hnext/h
@@ -438,6 +393,7 @@ contains
     end do
 
     stat = STEP_FAILED
+    errmsg = 'time step unsuccessful after repeated attempts ("max-try"=' // i_to_c(this%max_try) // ')'
 
     1 format(2x,'Changing H by a factor of ',f6.3)
 
@@ -501,7 +457,7 @@ contains
     tlast = this%uhist%last_time()
     h = t - tlast
     INSIST(h > 0)
-    
+
     if (this%uhist%depth() == 2) then ! trapezoid step to bootstrap
       call trap_step (this, t, u, stat)
       if (stat /= 0) then
@@ -666,26 +622,26 @@ contains
     end do
 
   end subroutine select_step_size
-  
+
   subroutine trap_step(this, t, u, stat)
-  
+
     class(idaesol), intent(inout) :: this
     real(r8), intent(in)  :: t
     class(vector), intent(inout) :: u
     integer,  intent(out) :: stat
-    
+
     real(r8) :: tlast, t0, h, etah
-    
+
     tlast = this%uhist%last_time()
     h = t - tlast
     etah = 0.5_r8 * h
     t0 = tlast + etah
 
     if (this%verbose) write(this%unit,fmt=1) this%seq+1, tlast, h
-    
+
     call this%uhist%interp_state(t,  u,  order=1)
     call this%uhist%interp_state(t0, this%u0, order=1)
-    
+
     !! Check the predicted solution for admissibility.
     call this%model%check_state(u, 0, stat)
     if (stat /= 0) then ! it's bad; cut h and retry.
@@ -694,7 +650,7 @@ contains
       stat = 3
       return
     end if
-    
+
     !! Update the preconditioner.
     this%updpc_calls = this%updpc_calls + 1
     call this%udot%copy(u)
@@ -714,12 +670,12 @@ contains
       if (this%verbose) write(this%unit,fmt=6)
       stat = 0
     end if
-    
+
     1 format(/,'TRAP step ',i6,': T=',es12.5,', H=',es12.5)
     3 format(2x,'Preconditioner updated at T=',es12.5)
     6 format(2x,'Step accepted: no local error control')
     7 format(2x,'Step REJECTED: inadmissible predicted solution')
-      
+
   end subroutine trap_step
 
   !! The backward Cauchy-Euler (BCE) method applied to the implicit DAE

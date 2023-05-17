@@ -16,8 +16,8 @@ module mfe_sim_type
     type(mfe1_vector) :: u
     real(r8), allocatable :: tout(:)
     real(r8) :: tlast, hlast
-    real(r8) :: dt_init, hlb, hub
-    integer :: mtry, ofreq, mstep
+    real(r8) :: dt_init
+    integer :: ofreq, mstep
   contains
     procedure :: init
     procedure :: run
@@ -106,36 +106,11 @@ contains
     if (stat /= 0) return
     if (this%ofreq <= 0) this%ofreq = this%mstep
 
-    call params%get('hlb', this%hlb, stat=stat, errmsg=errmsg)
+    call params%get('h-init', this%dt_init, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
-    if (this%hlb <= 0) then
-      stat = 1
-      errmsg = 'hlb must be > 0.0'
-      return
-    end if
-    call params%get('hub', this%hub, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (this%hub <= this%hlb) then
-      stat = 1
-      errmsg = 'hub must be > hlb'
-      return
-    end if
-    call params%get('h', this%dt_init, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (this%dt_init < this%hlb) then
-      stat = 1
-      errmsg = 'h must be >= hlb'
-      return
-    else if (this%dt_init > this%hub) then
-      stat = 1
-      errmsg = 'h must be <= hub'
-      return
-    end if
-    call params%get('mtry', this%mtry, default=9, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (this%mtry < 1) then
-      stat = 1
-      errmsg = 'mtry must be >= 1'
+    if (this%dt_init <= 0) then
+      stat = -1
+      errmsg = '"h-init" must be > 0'
       return
     end if
 
@@ -223,21 +198,14 @@ contains
       t = t + hnext
       nstep = nstep + 1
 
-      call this%solver%advance(this%hlb, this%mtry, t, this%u, hnext, stat)
-      select case (stat)!TODO: idaessol should return the message string itself
-      case (STEP_SIZE_TOO_SMALL)
-        stat = -1
-        errmsg = 'integration failure: next time step size is too small'
+      call this%solver%advance(t, this%u, hnext, stat, errmsg)
+      if (stat /= 0) then
+        errmsg = 'integration failure: ' // errmsg
         cycle
-      case (STEP_FAILED)
-        stat = -1
-        errmsg = 'integration failure: time step unsuccessful after repeated attempts'
-        cycle
-      end select
+      end if
 
       this%hlast = t - this%tlast
       this%tlast = t
-      hnext = min(hnext, this%hub)
 
       do while (t >= t_soft)
         !! HANDLE SOFT EVENT ACTIONS AT T_SOFT

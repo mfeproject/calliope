@@ -18,7 +18,6 @@ module mfe1_solver_type
   contains
     procedure :: init
     procedure :: set_initial_state
-    procedure :: integrate
     procedure :: advance
     procedure :: last_time
     procedure :: get_last_state_copy
@@ -52,7 +51,11 @@ contains
 
     call this%integ_model%init(this%env, this%model, params, stat, errmsg)
     if (stat /= 0) return
-    call this%integ%init(this%integ_model, params)
+    call this%integ%init(this%integ_model, params, stat, errmsg)
+    if (stat /= 0) then
+      errmsg = 'integrator input error: ' // errmsg
+      return
+    end if
 
     call params%get('verbose-stepping', flag, default=.false.)
     if (flag) then
@@ -69,30 +72,16 @@ contains
     call this%integ%set_initial_state(t, u, udot)
   end subroutine
 
-  subroutine integrate(this, hnext, status, nstep, tout, hmin, hmax, mtry)
+  subroutine advance(this, t, u, hnext, stat, errmsg)
 
     class(mfe1_solver), intent(inout) :: this
-    real(r8), intent(inout) :: hnext
-    integer,  intent(out)   :: status
-    integer,  intent(in) :: nstep, mtry
-    real(r8), intent(in) :: tout, hmin, hmax
-    optional :: nstep, tout, hmin, hmax, mtry
-
-    call this%integ%integrate(hnext, status, nstep, tout, hmin, hmax, mtry)
-
-  end subroutine
-
-  subroutine advance(this, hmin, mtry, t, u, hnext, stat)
-
-    class(mfe1_solver), intent(inout) :: this
-    real(r8), intent(in)    :: hmin
-    integer,  intent(in)    :: mtry
     real(r8), intent(inout) :: t
     type(mfe1_vector), intent(inout) :: u
     real(r8), intent(out)   :: hnext
     integer,  intent(out)   :: stat
+    character(:), allocatable :: errmsg
 
-    call this%integ%advance(hmin, mtry, t, u, hnext, stat)
+    call this%integ%advance(t, u, hnext, stat, errmsg)
 
   end subroutine
 
