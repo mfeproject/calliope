@@ -101,12 +101,12 @@ contains
       this%top => item%next
       deallocate(item)
     end do
-  end subroutine sim_event_queue_delete
+  end subroutine
 
   pure logical function is_empty(this)
     class(sim_event_queue), intent(in) :: this
     is_empty = .not.associated(this%top)
-  end function is_empty
+  end function
 
   pure function next_time(this)
     class(sim_event_queue), intent(in) :: this
@@ -116,7 +116,7 @@ contains
     else
       next_time = this%top%time
     end if
-  end function next_time
+  end function
 
   subroutine add_event(this, time, action, rank)
     class(sim_event_queue), intent(inout) :: this
@@ -172,7 +172,7 @@ contains
       this%top => item%next
       deallocate(item)
     end if
-  end subroutine pop_actions
+  end subroutine
 
   subroutine fast_forward(this, time)
     class(sim_event_queue), intent(inout) :: this
@@ -184,7 +184,7 @@ contains
       this%top => item%next
       deallocate(item)
     end do
-  end subroutine fast_forward
+  end subroutine
 
   subroutine set_time_resolution(this, dt)
     class(sim_event_queue), intent(inout) :: this
@@ -201,7 +201,7 @@ contains
     call sim_event_queue_delete(lhs)
     if (associated(rhs%top)) lhs%top => item_copy(rhs%top)
     lhs%h = rhs%h
-  end subroutine copy
+  end subroutine
 
   recursive function item_copy(item) result(copy)
     type(queue_item), intent(in) :: item
@@ -213,7 +213,7 @@ contains
       copy%actions = item%actions
     end if
     if (associated(item%next)) copy%next => item_copy(item%next)
-  end function item_copy
+  end function
 
   !! This auxiliary procedure returns a pointer to the QUEUE_ITEM that is the
   !! insertion point in the ordered list for a new item with the given time.
@@ -234,7 +234,7 @@ contains
       if (time < item%next%time) return
       item => item%next
     end do
-  end subroutine find_queue_item
+  end subroutine
 
   !!!! ACTION_LIST TYPE BOUND PROCEDURES !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
@@ -247,7 +247,7 @@ contains
       this%first => item%next
       deallocate(item)
     end do
-  end subroutine action_list_delete
+  end subroutine
 
   subroutine get_next_action(this, action)
     class(action_list), intent(inout) :: this
@@ -259,7 +259,7 @@ contains
       this%first => item%next
       deallocate(item)
     end if
-  end subroutine get_next_action
+  end subroutine
 
   subroutine add_action(this, action, rank)
     class(action_list), intent(inout) :: this
@@ -277,7 +277,7 @@ contains
       new_item%next => this%first
       this%first => new_item
     end if
-  end subroutine add_action
+  end subroutine
 
   subroutine action_list_copy(lhs, rhs)
     class(action_list), intent(inout) :: lhs
@@ -285,14 +285,14 @@ contains
     if (associated(lhs%first, rhs%first)) return  ! lhs and rhs are same
     call action_list_delete(lhs)
     if (associated(rhs%first)) lhs%first => list_item_copy(rhs%first)
-  end subroutine action_list_copy
+  end subroutine
 
   recursive function list_item_copy(item) result(copy)
     type(list_item), intent(in) :: item
     type(list_item), pointer :: copy
     allocate(copy, source=item)
     if (associated(item%next)) copy%next => list_item_copy(item%next)
-  end function list_item_copy
+  end function
 
   !! This auxiliary procedure returns a pointer to the LIST_ITEM that is the
   !! insertion point in the ordered list for a new item with the given RANK.
@@ -313,6 +313,6 @@ contains
       if (rank < item%next%rank) return
       item => item%next
     end do
-  end subroutine find_list_item
+  end subroutine
 
 end module sim_event_queue_type

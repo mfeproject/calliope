@@ -22,15 +22,8 @@ module mfe1_solver_type
     procedure :: last_time
     procedure :: get_last_state_copy
     procedure :: get_interpolated_state
-    procedure :: get_metrics
     procedure :: write_metrics
   end type
-
-  public :: SOLVED_TO_TOUT
-  public :: SOLVED_TO_NSTEP
-  public :: STEP_FAILED
-  public :: STEP_SIZE_TOO_SMALL
-  public :: BAD_INPUT
 
 contains
 
@@ -73,16 +66,13 @@ contains
   end subroutine
 
   subroutine advance(this, t, u, hnext, stat, errmsg)
-
     class(mfe1_solver), intent(inout) :: this
     real(r8), intent(inout) :: t
     type(mfe1_vector), intent(inout) :: u
     real(r8), intent(out)   :: hnext
     integer,  intent(out)   :: stat
     character(:), allocatable :: errmsg
-
     call this%integ%advance(t, u, hnext, stat, errmsg)
-
   end subroutine
 
   function last_time(this) result(t)
@@ -102,12 +92,6 @@ contains
     real(r8), intent(in) :: t
     type(mfe1_vector), intent(inout) :: u
     call this%integ%get_interpolated_state(t, u)
-  end subroutine
-
-  subroutine get_metrics(this, nstep) ! TEMPORARILY
-    class(mfe1_solver), intent(in) :: this
-    integer, intent(out) :: nstep
-    call this%integ%get_metrics(nstep=nstep)
   end subroutine
 
   subroutine write_metrics(this, unit)

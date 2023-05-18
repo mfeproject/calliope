@@ -157,7 +157,7 @@ contains
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
-    integer :: j, nstep
+    integer :: nstep
     real(r8) :: t, hnext, t_write, t_hard, t_soft
     character(16) :: string
     logical :: write_diag

@@ -182,7 +182,7 @@ module nka_type
 
 contains
 
-  subroutine nka_init (this, vec, mvec)
+  subroutine nka_init(this, vec, mvec)
     class(nka), intent(out) :: this
     class(vector), intent(in) :: vec
     integer, intent(in) :: mvec
@@ -195,16 +195,16 @@ contains
     allocate(this%h(n,n), this%next(n), this%prev(n))
     call nka_restart (this)
     ASSERT(nka_defined(this))
-  end subroutine nka_init
+  end subroutine
 
-  subroutine nka_set_vec_tol (this, vtol)
+  subroutine nka_set_vec_tol(this, vtol)
     class(nka), intent(inout) :: this
     real(r8), intent(in) :: vtol
     ASSERT(vtol > 0.0_r8)
     this%vtol = vtol
-  end subroutine nka_set_vec_tol
+  end subroutine
 
-  integer function nka_num_vec (this)
+  integer function nka_num_vec(this)
     class(nka), intent(in) :: this
     integer :: k
     nka_num_vec = 0
@@ -214,25 +214,25 @@ contains
       k = this%next(k)
     end do
     if (this%pending) nka_num_vec = nka_num_vec - 1
-  end function nka_num_vec
+  end function
 
-  integer function nka_max_vec (this)
+  integer function nka_max_vec(this)
     class(nka), intent(in) :: this
     nka_max_vec = this%mvec
-  end function nka_max_vec
+  end function
 
-  real(r8) function nka_vec_tol (this)
+  real(r8) function nka_vec_tol(this)
     class(nka), intent(in) :: this
     nka_vec_tol = this%vtol
-  end function nka_vec_tol
+  end function
 
-  integer function nka_real_kind (this)
+  integer function nka_real_kind(this)
     class(nka), intent(in) :: this
     nka_real_kind = kind(this%h)
-  end function nka_real_kind
+  end function
 
 
-  subroutine nka_accel_update (this, f)
+  subroutine nka_accel_update(this, f)
 
     class(nka), intent(inout) :: this
     class(vector), intent(inout) :: f
@@ -414,7 +414,7 @@ contains
   end subroutine nka_accel_update
 
 
-  subroutine nka_restart (this)
+  subroutine nka_restart(this)
     class(nka), intent(inout) :: this
     integer :: k
     this%subspace = .false.
@@ -428,10 +428,10 @@ contains
       this%next(k) = k + 1
     end do
     this%next(size(this%next)) = 0
-  end subroutine nka_restart
+  end subroutine
 
 
-  subroutine nka_relax (this)
+  subroutine nka_relax(this)
     class(nka), intent(inout) :: this
     integer :: new
     if (this%pending) then
@@ -449,37 +449,37 @@ contains
       this%free = new
       this%pending = .false.
     end if
-  end subroutine nka_relax
+  end subroutine
 
 
-  logical function nka_defined (this)
+  logical function nka_defined(this)
 
     class(nka), intent(in) :: this
 
     integer :: n
     logical, allocatable :: tag(:)
 
-    CHECKLIST: do
+    CHECKLIST: block
       nka_defined = .false.
-      if (this%mvec < 1) exit
-      if (.not.allocated(this%v)) exit
-      if (.not.allocated(this%w)) exit
-      if (size(this%v) /= this%mvec+1) exit
-      if (size(this%w) /= this%mvec+1) exit
-      if (.not.allocated(this%h)) exit
-      if (size(this%h,dim=1) /= this%mvec+1) exit
-      if (size(this%h,dim=2) /= this%mvec+1) exit
-      if (.not.allocated(this%next)) exit
-      if (size(this%next) /= this%mvec+1) exit
-      if (.not.allocated(this%prev)) exit
-      if (size(this%prev) /= this%mvec+1) exit
+      if (this%mvec < 1) exit CHECKLIST
+      if (.not.allocated(this%v)) exit CHECKLIST
+      if (.not.allocated(this%w)) exit CHECKLIST
+      if (size(this%v) /= this%mvec+1) exit CHECKLIST
+      if (size(this%w) /= this%mvec+1) exit CHECKLIST
+      if (.not.allocated(this%h)) exit CHECKLIST
+      if (size(this%h,dim=1) /= this%mvec+1) exit CHECKLIST
+      if (size(this%h,dim=2) /= this%mvec+1) exit CHECKLIST
+      if (.not.allocated(this%next)) exit CHECKLIST
+      if (size(this%next) /= this%mvec+1) exit CHECKLIST
+      if (.not.allocated(this%prev)) exit CHECKLIST
+      if (size(this%prev) /= this%mvec+1) exit CHECKLIST
 
-      if (this%vtol <= 0.0_r8) exit
+      if (this%vtol <= 0.0_r8) exit CHECKLIST
 
       n = size(this%next)
-      if (any(this%next < 0) .or. any(this%next > n)) exit
-      if (this%first < 0 .or. this%first > n) exit
-      if (this%free  < 0 .or. this%free  > n) exit
+      if (any(this%next < 0) .or. any(this%next > n)) exit CHECKLIST
+      if (this%first < 0 .or. this%first > n) exit CHECKLIST
+      if (this%free  < 0 .or. this%free  > n) exit CHECKLIST
 
       !! Tag array: each location is either in the free list or vector list.
       allocate(tag(size(this%next)))
@@ -487,10 +487,10 @@ contains
 
       !! Check the vector list for consistency.
       if (this%first == 0) then
-        if (this%last /= 0) exit
+        if (this%last /= 0) exit CHECKLIST
       else
         n = this%first
-        if (this%prev(n) /= 0) exit
+        if (this%prev(n) /= 0) exit CHECKLIST
         tag(n) = .true.
         do while (this%next(n) /= 0)
           if (this%prev(this%next(n)) /= n) exit CHECKLIST
@@ -498,7 +498,7 @@ contains
           if (tag(n)) exit CHECKLIST
           tag(n) = .true.
         end do
-        if (this%last /= n) exit
+        if (this%last /= n) exit CHECKLIST
       end if
 
       !! Check the free list.
@@ -510,13 +510,10 @@ contains
       end do
 
       !! All locations accounted for?
-      if (.not.all(tag)) exit
+      if (.not.all(tag)) exit CHECKLIST
 
       nka_defined = .true.
-      exit
-    end do CHECKLIST
-
-    if (allocated(tag)) deallocate(tag)
+    end block CHECKLIST
 
   end function nka_defined
 

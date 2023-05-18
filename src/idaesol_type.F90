@@ -42,6 +42,17 @@ module idaesol_type
   implicit none
   private
 
+  type :: perf_counters
+    integer :: pcfun_calls = 0      ! number of calls to PCFUN
+    integer :: updpc_calls = 0      ! number of calls to UPDPC
+    integer :: updpc_failed = 0     ! number of UPDPC calls returning an error
+    integer :: retried_bce = 0      ! number of retried BCE steps
+    integer :: failed_bce = 0       ! number of completely failed BCE steps
+    integer :: rejected_steps = 0   ! number of steps rejected on error tolerance
+    real(r8) :: min_h = huge(1.0_r8) ! minimum step size used on a successful step
+    real(r8) :: max_h = tiny(1.0_r8) ! maximum step size used on a successful step
+  end type
+
   type, public :: idaesol
     private
     class(idaesol_model), pointer :: model => null()  ! reference only -- do not own
@@ -63,14 +74,7 @@ module idaesol_type
     class(vector), allocatable :: du, udot  ! local to bce_step
 
     !! Perfomance counters
-    integer :: pcfun_calls = 0      ! number of calls to PCFUN
-    integer :: updpc_calls = 0      ! number of calls to UPDPC
-    integer :: updpc_failed = 0     ! number of UPDPC calls returning an error
-    integer :: retried_bce = 0      ! number of retried BCE steps
-    integer :: failed_bce = 0       ! number of completely failed BCE steps
-    integer :: rejected_steps = 0   ! number of steps rejected on error tolerance
-    real(r8) :: hmin = huge(1.0_r8) ! minimum step size used on a successful step
-    real(r8) :: hmax = tiny(1.0_r8) ! maximum step size used on a successful step
+    type(perf_counters), public :: counters
 
     !! Diagnostics
     integer :: unit = 0
@@ -89,7 +93,6 @@ module idaesol_type
     procedure :: set_verbose_stepping
     procedure :: set_quiet_stepping
     procedure :: write_metrics
-    procedure :: get_metrics
   end type idaesol
 
   type, abstract, public :: idaesol_model
@@ -159,32 +162,32 @@ module idaesol_type
 contains
 
   !! Return a pointer to the current system state.
-  subroutine get_last_state_view (this, view)
+  subroutine get_last_state_view(this, view)
     class(idaesol), intent(in) :: this
     class(vector), pointer, intent(out) :: view
     call this%uhist%get_last_state_view(view)
-  end subroutine get_last_state_view
+  end subroutine
 
   !! Return a copy of the current system state.
   subroutine get_last_state_copy(this, copy)
     class(idaesol), intent(in) :: this
     class(vector), intent(inout) :: copy
     call this%uhist%get_last_state_copy(copy)
-  end subroutine get_last_state_copy
+  end subroutine
 
   !! Return the current system time.
-  function last_time (this) result (t)
+  function last_time(this) result(t)
     class(idaesol), intent(in) :: this
     real(r8) :: t
     t = this%uhist%last_time()
-  end function last_time
+  end function
 
   !! Return the last time step size used (successfully).
-  function last_step_size (this) result (h)
+  function last_step_size(this) result(h)
     class(idaesol), intent(in) :: this
     real(r8) :: h
     h = this%hlast
-  end function last_step_size
+  end function
 
   !! Computes the interpolated system state vector at time T.  The specified
   !! time should generally be contained in the interval between the current
@@ -198,48 +201,30 @@ contains
     real(r8), intent(in) :: t
     class(vector), intent(inout) :: u
     call this%uhist%interp_state(t, u)
-  end subroutine get_interpolated_state
+  end subroutine
 
-  subroutine write_metrics (this, unit)
+  subroutine write_metrics(this, unit)
     class(idaesol), intent(in) :: this
     integer, intent(in) :: unit
     write(unit,fmt='(/,a,i0,a,g0.5,a,g0.5)') &
       'STEP=', this%seq, ', T=', this%uhist%last_time(), ', H=', this%hlast
     write(unit,fmt='(a,i0,":",i0,a,5(i0,:,":"))') &
-      'NFUN:NPC=', this%pcfun_calls, this%updpc_calls, &
-      ', NPCF:NNR:NNF:NSR=', this%updpc_failed, &
-      this%retried_bce, this%failed_bce, this%rejected_steps
-  end subroutine write_metrics
+      'NFUN:NPC=', this%counters%pcfun_calls, this%counters%updpc_calls, &
+      ', NPCF:NNR:NNF:NSR=', this%counters%updpc_failed, &
+      this%counters%retried_bce, this%counters%failed_bce, this%counters%rejected_steps
+  end subroutine
 
-  subroutine get_metrics (this, nstep, hmin, hmax, counters)
-    class(idaesol), intent(in) :: this
-    integer, intent(out), optional :: nstep, counters(:)
-    real(r8), intent(out), optional :: hmin, hmax
-    if (present(nstep)) nstep = this%seq
-    if (present(hmin)) hmin = this%hmin
-    if (present(hmax)) hmax = this%hmax
-    if (present(counters)) then
-      ASSERT(size(counters) == 6)
-      counters(1) = this%pcfun_calls
-      counters(2) = this%updpc_calls
-      counters(3) = this%updpc_failed
-      counters(4) = this%retried_bce
-      counters(5) = this%failed_bce
-      counters(6) = this%rejected_steps
-    end if
-  end subroutine get_metrics
-
-  subroutine set_verbose_stepping (this, unit)
+  subroutine set_verbose_stepping(this, unit)
     class(idaesol), intent(inout) :: this
     integer, intent(in) :: unit
     this%unit = unit
     this%verbose = .true.
-  end subroutine set_verbose_stepping
+  end subroutine
 
-  subroutine set_quiet_stepping (this)
+  subroutine set_quiet_stepping(this)
     class(idaesol), intent(inout) :: this
     this%verbose = .false.
-  end subroutine set_quiet_stepping
+  end subroutine
 
   subroutine init(this, model, params, stat, errmsg)
 
@@ -346,7 +331,7 @@ contains
     class(vector), intent(in) :: u, udot
     call this%uhist%flush(t, u, udot)
     this%seq = 0
-  end subroutine set_initial_state
+  end subroutine
 
   !! This advances the state by a single "robust" time step. The target time
   !! for the step is T, but in the case of failure, the step size will be
@@ -405,7 +390,7 @@ contains
   !! PDEs are being simultaneously integrated (time split).  This allows the
   !! driving procedure control over acceptance of the overarching time step.
 
-  subroutine commit_state (this, t, u)
+  subroutine commit_state(this, t, u)
 
     class(idaesol), intent(inout) :: this
     real(r8), intent(in) :: t
@@ -421,10 +406,10 @@ contains
     this%seq = this%seq + 1
     this%freeze_count = max(0, this%freeze_count - 1)
 
-    this%hmin = min(h, this%hmin)
-    this%hmax = max(h, this%hmax)
+    this%counters%min_h = min(h, this%counters%min_h)
+    this%counters%max_h = max(h, this%counters%max_h)
 
-  end subroutine commit_state
+  end subroutine
 
   !! Starting from the current state, this subroutine takes a single step to
   !! compute the solution at time T.  If successful (STAT==0), the advanced
@@ -441,7 +426,7 @@ contains
   !! error exceeded tolerance (STAT==2), and inadmissable predicted solution
   !! (STAT==3).
 
-  subroutine step (this, t, u, hnext, stat)
+  subroutine step(this, t, u, hnext, stat)
 
     class(idaesol), intent(inout) :: this
     real(r8), intent(in)  :: t
@@ -487,7 +472,7 @@ contains
     !! Check the predicted solution for admissibility.
     call this%model%check_state (this%up, 0, stat)
     if (stat /= 0) then ! it's bad; cut h and retry.
-      this%rejected_steps = this%rejected_steps + 1
+      this%counters%rejected_steps = this%counters%rejected_steps + 1
       if (this%verbose) write(this%unit,fmt=7)
       hnext = 0.25_r8 * h
       this%freeze_count = 1
@@ -509,7 +494,7 @@ contains
 
       !! Update the preconditioner if necessary.
       if (.not.this%usable_pc) then
-        this%updpc_calls = this%updpc_calls + 1
+        this%counters%updpc_calls = this%counters%updpc_calls + 1
         !call this%model%compute_precon(t, up, (up-u0)/etah, etah)
         call this%udot%copy(this%up)
         call this%udot%update(-1.0_r8, this%u0)
@@ -528,19 +513,19 @@ contains
 
       if (fresh_pc) then ! preconditioner was fresh; cut h and return error condition.
         if (stat == 2) then ! inadmissible iterate generated
-          this%rejected_steps = this%rejected_steps + 1
+          this%counters%rejected_steps = this%counters%rejected_steps + 1
           hnext = 0.25_r8 * h
           this%freeze_count = 1
           this%usable_pc = .false.
         else
-          this%failed_bce = this%failed_bce + 1
+          this%counters%failed_bce = this%counters%failed_bce + 1
           hnext = 0.5_r8 * h
           this%freeze_count = 2
         end if
         stat = 1
         return
       else ! update the preconditioner and retry the nonlinear solve.
-        this%retried_bce = this%retried_bce + 1
+        this%counters%retried_bce = this%counters%retried_bce + 1
         this%usable_pc = .false.
         cycle BCE
       end if
@@ -560,7 +545,7 @@ contains
         if (this%verbose) write(this%unit,fmt=4) perr
         stat = 0
       else ! reject the step; cut h and return error condition.
-        this%rejected_steps = this%rejected_steps + 1
+        this%counters%rejected_steps = this%counters%rejected_steps + 1
         if (this%verbose) write(this%unit,fmt=5) perr
         hnext = 0.5_r8 * h
         this%freeze_count = 1
@@ -601,7 +586,7 @@ contains
   !! of the scheme, which leads to a problem of finding the root of a third
   !! order polynomial that is solved here using Newton iteration.
 
-  subroutine select_step_size (dt, perr, h)
+  subroutine select_step_size(dt, perr, h)
 
     real(r8), intent(in)  :: dt(:), perr
     real(r8), intent(out) :: h
@@ -621,7 +606,7 @@ contains
       if (abs(dh) / h < tol) exit
     end do
 
-  end subroutine select_step_size
+  end subroutine
 
   subroutine trap_step(this, t, u, stat)
 
@@ -645,14 +630,14 @@ contains
     !! Check the predicted solution for admissibility.
     call this%model%check_state(u, 0, stat)
     if (stat /= 0) then ! it's bad; cut h and retry.
-      this%rejected_steps = this%rejected_steps + 1
+      this%counters%rejected_steps = this%counters%rejected_steps + 1
       if (this%verbose) write(this%unit,fmt=7)
       stat = 3
       return
     end if
 
     !! Update the preconditioner.
-    this%updpc_calls = this%updpc_calls + 1
+    this%counters%updpc_calls = this%counters%updpc_calls + 1
     call this%udot%copy(u)
     call this%udot%update(-1.0_r8, this%u0)
     call this%udot%scale(1.0_r8/etah)
@@ -663,7 +648,7 @@ contains
     !! Solve the nonlinear BCE system.
     call bce_step(this, t, etah, this%u0, u, stat)
     if (stat /= 0) then
-      this%failed_bce = this%failed_bce + 1
+      this%counters%failed_bce = this%counters%failed_bce + 1
       this%freeze_count = 1
       stat = 1
     else
@@ -728,7 +713,7 @@ contains
       itr = itr + 1
 
       !! Evaluate the nonlinear function and precondition it.
-      this%pcfun_calls = this%pcfun_calls + 1
+      this%counters%pcfun_calls = this%counters%pcfun_calls + 1
 
       !call this%model%compute_f(t, u, (u-u0)/h, du)
       call this%udot%copy(u)

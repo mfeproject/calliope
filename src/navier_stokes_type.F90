@@ -51,7 +51,6 @@ contains
     class(navier_stokes), intent(inout) :: this
     real(r8), intent(in) :: t
 
-    ! Local variables
     integer :: i, k
     real(r8) :: rx1, rx2, term
     real(r8) :: umid(3), f1(3), f2(3), favg(3)

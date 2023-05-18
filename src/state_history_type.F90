@@ -211,62 +211,60 @@ contains
     end do
   end subroutine init_copy
 
-  subroutine flush (this, t, x, xdot)
+  subroutine flush(this, t, x, xdot)
     class(state_history), intent(inout) :: this
     real(r8), intent(in) :: t
     class(vector), intent(in) :: x
     class(vector), intent(in), optional :: xdot
     this%nvec = 0
     call record_state(this, t, x, xdot)
-  end subroutine flush
+  end subroutine
 
-  pure integer function real_kind (this)
+  pure integer function real_kind(this)
     class(state_history), intent(in) :: this
     real_kind = kind(this%t)
-  end function real_kind
+  end function
 
-  integer function depth (this)
+  integer function depth(this)
     class(state_history), intent(in) :: this
     depth = this%nvec
-  end function depth
+  end function
 
-  integer function max_depth (this)
+  integer function max_depth(this)
     class(state_history), intent(in) :: this
     max_depth = 0
     if (allocated(this%t)) max_depth = size(this%t)
-  end function max_depth
+  end function
 
-  subroutine get_last_state_view (this, view)
+  subroutine get_last_state_view(this, view)
     class(state_history), intent(in), target :: this
     class(vector), pointer :: view
     ASSERT(this%nvec > 0)
     view => this%d(1)%vec
-  end subroutine get_last_state_view
+  end subroutine
 
-  subroutine get_last_state_copy (this, copy)
+  subroutine get_last_state_copy(this, copy)
     class(state_history), intent(in) :: this
     class(vector), intent(inout) :: copy
     ASSERT(this%nvec > 0)
-    !ASSERT(size(copy) == this%vlen)
-    !copy = this%d(1)%vec
     call copy%copy(this%d(1)%vec)
-  end subroutine get_last_state_copy
+  end subroutine
 
-  function last_time (this) result (t)
+  function last_time(this) result(t)
     class(state_history), intent(in) :: this
     real(r8) :: t
     ASSERT(this%nvec > 0)
     t = this%t(1)
-  end function last_time
+  end function
 
-  function time_deltas (this) result (deltas)
+  function time_deltas(this) result(deltas)
     class(state_history), intent(in) :: this
     real(r8) :: deltas(this%nvec-1)
     ASSERT(this%nvec > 1)
     deltas = this%t(1) - this%t(2:this%nvec)
-  end function time_deltas
+  end function
 
-  subroutine interp_state (this, t, x, order)
+  subroutine interp_state(this, t, x, order)
 
     class(state_history), intent(in)  :: this
     real(r8), intent(in)  :: t
@@ -286,15 +284,10 @@ contains
       interp_order = this%nvec - 1
     end if
 
-!    do j = 1, size(x)
-      !value = this%d(interp_order+1)%vec(j)
-      call x%copy(this%d(interp_order+1)%vec)
-      do k = interp_order, 1, -1
-        !value = this%d(k)%vec(j) + (t-this%t(k)) * value
-        call x%update(1.0_r8, this%d(k)%vec, (t-this%t(k)))
-      end do
-!      x(j) = value
-!    end do
+    call x%copy(this%d(interp_order+1)%vec)
+    do k = interp_order, 1, -1
+      call x%update(1.0_r8, this%d(k)%vec, (t-this%t(k)))
+    end do
 
   end subroutine interp_state
 
@@ -328,7 +321,7 @@ contains
  !! gets discarded.
  !!
 
-  subroutine record_state (this, t, x, xdot)
+  subroutine record_state(this, t, x, xdot)
 
     class(state_history), intent(inout) :: this
     real(r8), intent(in) :: t
@@ -343,26 +336,19 @@ contains
     this%nvec = min(1+this%nvec, this%mvec)  ! update the number of vectors
 
     !! Shift the divided differences
-    !tmp = this%d(this%nvec)  ! storage for oldest gets recycled for newest
     call move_alloc(this%d(this%nvec)%vec, tmp%vec)
     do j = this%nvec, 2, -1
       this%t(j) = this%t(j-1)
-      !this%d(j) = this%d(j-1)
       call move_alloc(this%d(j-1)%vec, this%d(j)%vec)
     end do
 
     !! Insert the new vector
     this%t(1) = t
-    !this%d(1) = tmp
-    !this%d(1)%vec = x
     call move_alloc(tmp%vec, this%d(1)%vec)
     call this%d(1)%vec%copy(x)
 
     !! Update the divided differences
     do j = 2, this%nvec
-      !this%d(j)%vec = (this%d(j-1)%vec - this%d(j)%vec) / (this%t(1) - this%t(j))
-      !a = 1.0_r8 / (this%t(1) - this%t(j))
-      !call this%d(j)%vec%update(a, this%d(j-1)%vec, -a)
       call this%d(j)%vec%update(-1.0_r8, this%d(j-1)%vec)
       call this%d(j)%vec%scale(1.0_r8/(this%t(j) - this%t(1)))
     end do
@@ -374,31 +360,26 @@ contains
 
     !! Shift the divided differences, except the first; the new vector and
     !! time index are the same as the most recent.
-    !tmp = this%d(this%nvec)  ! storage for oldest gets recycled for newest
     call move_alloc(this%d(this%nvec)%vec, tmp%vec) ! storage for oldest gets recycled for newest
     do j = this%nvec, 3, -1
       this%t(j) = this%t(j-1)
-      !this%d(j) = this%d(j-1)
       call move_alloc(this%d(j-1)%vec, this%d(j)%vec)
     end do
 
     !! The first divided difference (same time index) is the specified derivative.
     this%t(2) = this%t(1)
-    !this%d(2) = tmp
-    !this%d(2)%vec = xdot
     call move_alloc(tmp%vec, this%d(2)%vec)
     call this%d(2)%vec%copy(xdot)
 
     !! Update the rest of the divided differences.
     do j = 3, this%nvec
-      !this%d(j)%vec = (this%d(j-1)%vec - this%d(j)%vec) / (this%t(1) - this%t(j))
       call this%d(j)%vec%update(-1.0_r8, this%d(j-1)%vec)
       call this%d(j)%vec%scale(1.0_r8/(this%t(j) - this%t(1)))
     end do
 
   end subroutine record_state
 
-  logical function defined (this)
+  logical function defined(this)
     class(state_history), intent(in) :: this
     integer :: j
     defined = .false.
@@ -411,7 +392,7 @@ contains
       if (.not.allocated(this%d(j)%vec)) return
     end do
     defined = .true.
-  end function defined
+  end function
 
   !! Defined assignment subroutine
   subroutine copy(lhs, rhs)
@@ -424,10 +405,9 @@ contains
       lhs%nvec = rhs%nvec
       do j = 1, lhs%nvec
         lhs%t(j) = rhs%t(j)
-        !lhs%d(j)%vec = rhs%d(j)%vec
         call lhs%d(j)%vec%copy(rhs%d(j)%vec)
       end do
     end if
-  end subroutine copy
+  end subroutine
 
 end module state_history_type
