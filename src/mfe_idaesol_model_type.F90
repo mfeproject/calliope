@@ -9,7 +9,6 @@ module mfe_idaesol_model_type
   use mfe_precon_type
   use vector_class
   use mfe1_vector_type
-  use timer_tree_type
   implicit none
   private
 
@@ -129,8 +128,7 @@ contains
     real(r8), intent(in)  :: t
     class(vector), intent(inout) :: u, udot
     class(vector), intent(inout) :: f
-    call stop_timer('integration')
-    call start_timer('compute_f')
+    call this%env%timer%start('compute_f')
     select type (u)
     class is (mfe1_vector)
       select type (udot)
@@ -141,8 +139,7 @@ contains
         end select
       end select
     end select
-    call stop_timer('compute_f')
-    call start_timer('integration')
+    call this%env%timer%stop('compute_f')
   end subroutine
 
   subroutine apply_precon(this, t, u, f)
@@ -150,14 +147,12 @@ contains
     real(r8), intent(in) :: t
     class(vector), intent(inout) :: u
     class(vector), intent(inout) :: f
-    call stop_timer('integration')
-    call start_timer('apply_precon')
+    call this%env%timer%start('apply_precon')
     select type (f)
     class is (mfe1_vector)
       call this%precon%apply(f)
     end select
-    call stop_timer('apply_precon')
-    call start_timer('integration')
+    call this%env%timer%stop('apply_precon')
   end subroutine
 
   subroutine compute_precon(this, t, u, udot, dt)
@@ -165,8 +160,7 @@ contains
     real(r8), intent(in)  :: t, dt
     class(vector), intent(inout) :: u, udot
     integer :: stat
-    call stop_timer('integration')
-    call start_timer('compute_precon')
+    call this%env%timer%start('compute_precon')
     select type (u)
     class is (mfe1_vector)
       select type (udot)
@@ -175,8 +169,7 @@ contains
         INSIST(stat == 0)
       end select
     end select
-    call stop_timer('compute_precon')
-    call start_timer('integration')
+    call this%env%timer%stop('compute_precon')
   end subroutine
 
 
@@ -188,8 +181,7 @@ contains
     class(vector), intent(in) :: u, du
     real(r8), intent(out) :: error
 
-    call stop_timer('integration')
-    call start_timer('du_norm')
+    call this%env%timer%start('du_norm')
 
     select type (u)
     class is (mfe1_vector)
@@ -207,8 +199,7 @@ contains
       end select
     end select
 
-    call stop_timer('du_norm')
-    call start_timer('integration')
+    call this%env%timer%stop('du_norm')
 
   end subroutine
 
@@ -223,8 +214,7 @@ contains
 
     integer :: loc
 
-    call stop_timer('integration')
-    call start_timer('check_state')
+    call this%env%timer%start('check_state')
 
     select type (u)
     class is (mfe1_vector)
@@ -244,8 +234,7 @@ contains
 
     end select
 
-    call stop_timer('check_state')
-    call start_timer('integration')
+    call this%env%timer%stop('check_state')
 
   end subroutine
 

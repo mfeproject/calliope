@@ -1,11 +1,13 @@
 module mfe_env_type
 
   use simlog_type
+  use timer_tree_type
   implicit none
   private
 
   type, public :: mfe_env
     type(simlog) :: log
+    type(timer_tree) :: timer
     integer :: log_unit, grf_unit
   end type
 

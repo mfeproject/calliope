@@ -15,7 +15,6 @@ module mfe_model_type
   use btd_matrix_type
   use block_linear_solver
   use index_func_type
-  use timer_tree_type
   implicit none
   private
 

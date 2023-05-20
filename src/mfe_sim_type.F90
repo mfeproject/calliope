@@ -9,7 +9,6 @@ module mfe_sim_type
   use mfe1_vector_type
   use sim_event_queue_type
   use time_step_sync_type
-  use timer_tree_type
   implicit none
   private
 
@@ -196,7 +195,7 @@ contains
     type(action_list), allocatable :: actions
     class(event_action), allocatable :: action
 
-    call start_timer('integration')
+    call this%env%timer%start('integration')
 
     t = this%solver%last_time()
     this%tlast = t
@@ -316,7 +315,7 @@ contains
 
     end do
 
-    call stop_timer('integration')
+    call this%env%timer%stop('integration')
 
   end subroutine run
 

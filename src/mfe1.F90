@@ -34,12 +34,11 @@
 
 program mfe1
 
+  use,intrinsic :: iso_fortran_env, only: output_unit, error_unit
+  use parameter_list_type
+  use parameter_list_json
   use mfe_env_type
   use mfe_sim_type
-  use parameter_list_type
-  use,intrinsic :: iso_fortran_env, only: output_unit, error_unit
-  use timer_tree_type
-  use parameter_list_json
   implicit none
 
   integer :: i, stat, lun
@@ -49,8 +48,13 @@ program mfe1
   type(mfe_sim), target :: sim
   type(mfe_env), target :: env
 
-  call start_timer('simulation')
-  call start_timer('initialization')
+  !! Initialize the simulation run environment
+  open(newunit=env%log_unit, file='mfelog', position='rewind', action='write', status='replace')
+  open(newunit=env%grf_unit, file='mfegrf', position='rewind', action='write', status='replace')
+  call env%log%init([output_unit, env%log_unit], verbosity=VERB_NORMAL)
+
+  call env%timer%start('simulation')
+  call env%timer%start('initialization')
 
   call get_command_argument(0, arg)
   i = scan(arg, '/', back=.true.)
@@ -60,10 +64,6 @@ program mfe1
     write(error_unit,'(3a)') 'Usage: ', prog, ' INFILE'
     stop 1
   end if
-
-  open(newunit=env%log_unit, file='mfelog', position='rewind', action='write', status='replace')
-  open(newunit=env%grf_unit, file='mfegrf', position='rewind', action='write', status='replace')
-  call env%log%init([output_unit, env%log_unit], verbosity=VERB_NORMAL)
 
   call get_command_argument(1,arg)
   infile = trim(arg)
@@ -77,12 +77,12 @@ program mfe1
 
   call sim%init(env, params, stat, errmsg)
   if (stat /= 0) call env%log%fatal(errmsg)
-  call stop_timer('initialization')
+  call env%timer%stop('initialization')
 
   call sim%run(stat, errmsg)
 
-  call stop_timer('simulation')
-  call write_timer_tree(output_unit, 2)
+  call env%timer%stop('simulation')
+  call env%timer%write(output_unit, 2)
   if (stat /= 0) call env%log%fatal(errmsg)
 
   call env%log%exit
