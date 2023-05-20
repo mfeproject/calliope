@@ -5,14 +5,15 @@ module pde_class
   use parameter_list_type
   implicit none
   private
-  
+
   type, abstract, public :: pde
+    type(mfe1_disc_core), pointer :: disc => null() ! reference only
   contains
     procedure(neqns), nopass, deferred :: neqns
     procedure(init), deferred :: init
     procedure(rhs), deferred :: rhs
   end type
-  
+
   abstract interface
     pure integer function neqns()
     end function

@@ -10,7 +10,7 @@ module navier_stokes_type
   private
 
   type, extends(pde), public :: navier_stokes
-    type(mfe1_disc_core), pointer :: disc => null() ! reference only
+    private
     real(r8) :: visc
   contains
     procedure, nopass :: neqns

@@ -1,37 +1,50 @@
 {
-  "pde-lib-file": "libnavier-stokes.so",
-  "nseg": 6,
-  "niseg": [6, 10, 15, 25, 10, 6],
-  "useg": 
-    [[0.0000, 0.10000, 0.0000, 0.25000]
-    ,[0.48000, 0.10000, 0.0000, 0.25000]
-    ,[0.49700, 0.10000, 0.0000, 0.25000]
-    ,[0.50000, 0.56250E-01, 0.0000, 0.13750]
-    ,[0.50300, 0.12500E-01, 0.0000, 0.25000E-01]
-    ,[0.52000, 0.12500E-01, 0.0000, 0.25000E-01]
-    ,[1.0000, 0.12500E-01, 0.0000, 0.25000E-01]],
-  "bc-left-u-type": [false, true, false],
-  "bc-right-u-type": [false, true, false],
-  "bc-left-x-type": true,
-  "bc-right-x-type": true,
-  //"eqw": [1.0000, 1.0000, 1.0000],
-  "kreg": 2,
-  "eltvsc": [0.25000E-08, 0.25000E-08, 0.25000E-08],
-  "segspr": [0.0000, 0.0000, 0.0000],
-  "dxmin": 0.0000,
-  "fdinc": 0.10000E-07,
-  "verbose-stepping": true,
-  "ofreq": 0,
-  "mstep": 2000,
-  "output-times": [0.10000E-03, 0.10000E-02, 0.10000E-01, 0.10000, 0.20000,
+  "mfe-model": {
+    "pde-library": "libnavier-stokes.so",
+    "pde-params": {"visc": 0.10000E-03},
+    "boundary-conditions": {
+      "dir-left": [false, true, false],
+      "dir-right": [false, true, false]
+      //"fixed-node-left": true,
+      //"fixed-node-right": true,
+    },
+    //"eqw": [1.0, 1.0, 1.0],
+    "kreg": 2,
+    "eltvsc": [0.25e-8, 0.25e-8, 0.25e-8],
+    "segspr": [0.0000, 0.0000, 0.0000],
+    "fdinc": 0.10000E-07
+  },
+  "initial-condition": {
+    "niseg": [6, 10, 15, 25, 10, 6],
+    "useg":
+      [[0.000, 0.10000, 0.0, 0.2500]
+      ,[0.480, 0.10000, 0.0, 0.2500]
+      ,[0.497, 0.10000, 0.0, 0.2500]
+      ,[0.500, 0.05625, 0.0, 0.1375]
+      ,[0.503, 0.01250, 0.0, 0.0250]
+      ,[0.520, 0.01250, 0.0, 0.0250]
+      ,[1.000, 0.01250, 0.0, 0.0250]]
+  },
+  "simulation": {
+    "t-init": 0.0,
+    "h-init": 1.0e-8,
+    "max-step": 2000,
+    "output-times": [0.10000E-03, 0.10000E-02, 0.10000E-01, 0.10000, 0.20000,
            0.28000, 0.28400, 0.28800, 0.29200, 0.29600, 0.30000, 0.40000],
-  "rtol": 0.10000,
-  "ptol": [0.10000E-03, 0.10000E-03, 0.10000E-03, 0.10000E-02],
-  "t-init": 0.0,
-  "h-init": 1.0e-8,
-  "nlk-max-iter": 4, // DEFAULT 5
-  "nlk-vec-tol": 0.10000, // DEFAULT 0.01
-  "problem": {
-    "visc": 0.10000E-03
+    "output-freq": 0
+  },
+  "solver": {
+    "abs-u-tol": [1e-4, 1e-4, 1e-4],
+    "abs-x-tol": 1e-3,
+    "rel-dx-tol": 0.1,
+    //"nlk-tol": 0.1,
+    "nlk-max-iter": 4, // DEFAULT 5
+    //"nlk-max-vec": 4,
+    "nlk-vec-tol": 0.1, // DEFAULT 0.01
+    //"h-max":,
+    //"h-min":,
+    //"max-try":,
+    "dxmin": 0.0,
+    "verbose-stepping": true
   }
 }

@@ -15,7 +15,7 @@ module mfe1_disc_core_type
     real(r8), allocatable :: n(:,:,:)
     real(r8), allocatable :: r(:,:,:)
     real(r8), allocatable :: mtx(:,:,:,:,:)
-    real(r8), allocatable :: eqw(:), eltvsc(:), segspr(:)
+    real(r8), allocatable :: eqw(:)
   contains
     generic   :: laplacian => lapl_const_coef, lapl_var_coef
     procedure, private :: lapl_const_coef, lapl_var_coef
@@ -35,7 +35,7 @@ contains
     integer :: i
     real(r8) :: c, r1, m, e, s1, s2
 
-    associate (rx => this%r(this%neqns+1,:,:))
+    associate (rx => this%r(this%nvars,:,:))
       c = this%eqw(eqno) * coef
       do i = 1, this%ncell
         r1 = 1.0_r8 / this%n(2,eqno,i)
@@ -70,7 +70,7 @@ contains
     integer :: i
     real(r8) :: c, r1, m, e, s1, s2
 
-    associate (rx => this%r(this%neqns+1,:,:))
+    associate (rx => this%r(this%nvars,:,:))
       do i = 1, this%ncell
         r1 = 1.0_r8 / this%n(2,eqno,i)
         m = this%dudx(eqno,i)

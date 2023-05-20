@@ -6,15 +6,16 @@ module mfe1_disc_type
   use mfe1_disc_core_type
   use mfe1_vector_type
   use pde_class
-  use parameter_list_type
   implicit none
   private
 
   type, extends(mfe1_disc_core), public :: mfe1_disc
+    private
     real(r8) :: fdinc
     class(pde), allocatable :: p
     integer :: kreg
     logical :: udot_valid = .false.
+    real(r8), allocatable :: eltvsc(:), segspr(:)
   contains
     procedure :: init
     procedure :: compute_local_residual
@@ -34,29 +35,33 @@ contains
 
   subroutine init(this, ncell, params, stat, errmsg)
 
+    use parameter_list_type
+    use string_utilities, only: i_to_c
+
     class(mfe1_disc), intent(out), target :: this
     integer, intent(in) :: ncell
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
+    real(r8) :: rtmp
     character(:), allocatable :: string
+    type(parameter_list), pointer :: plist
 
-    call params%get('pde-lib-file', string, stat=stat, errmsg=errmsg)
+    call params%get('pde-library', string, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
     call load_pde(string, this%p, stat, errmsg)
     if (stat /= 0) return
 
-#ifdef GNU_PR109846
-    block
-      type(parameter_list), pointer :: sublist
-      sublist => params%sublist('problem')
-      call this%p%init(this%mfe1_disc_core, sublist, stat, errmsg)
-    end block
-#else
-    call this%p%init(this%mfe1_disc_core, params%sublist('problem'), stat, errmsg)
-#endif
-    if (stat /= 0) return
+    if (params%is_sublist('pde-params')) then
+      plist => params%sublist('pde-params')
+      call this%p%init(this%mfe1_disc_core, plist, stat, errmsg)
+      if (stat /= 0) return
+    else
+      stat = -1
+      errmsg = 'missing "pde-params" sublist parameter'
+      return
+    end if
 
     this%neqns = this%p%neqns()
     this%nvars = this%neqns+1
@@ -68,62 +73,90 @@ contains
     allocate(this%dx(this%ncell), this%n(2,this%neqns,this%ncell))
     allocate(this%mtx(this%nvars,this%nvars,2,2,this%ncell))
 
-    !TODO: rename variables
-    call params%get('eltvsc', this%eltvsc, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (size(this%eltvsc) /= this%neqns) then
-      stat = 1
-      errmsg = 'wrong number of values for eltvsc'
-      return
-    else if (any(this%eltvsc < 0.0)) then
-      stat = 1
-      errmsg = 'eltvsc is < 0.0'
-      return
-    end if
+    select case (this%neqns)
+    case (1)
 
-    if (this%neqns > 1) then
+      this%eqw = [1.0_r8] ! Not a parameter for scalar PDE
+
+      !TODO: rename variable
+      call params%get('eltvsc', rtmp, stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      if (rtmp < 0.0) then
+        stat = -1
+        errmsg = '"eltvsc" must be >= 0.0'
+        return
+      end if
+      this%eltvsc = [rtmp]
+
+      !TODO: rename variable
+      call params%get('segspr', rtmp, stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      if (rtmp < 0.0) then
+        stat = -1
+        errmsg = '"segspr" must be >= 0.0'
+        return
+      end if
+      this%segspr = [rtmp]
+
+    case (2:)
+
+      !TODO: rename variable
       call params%get('eqw', this%eqw, default=spread(1.0_r8,dim=1,ncopies=this%neqns), stat=stat, errmsg=errmsg)
       if (stat /= 0) return
       if (size(this%eqw) /= this%neqns) then
-        stat = 1
-        errmsg = 'wrong number of values for eqw'
+        stat = -1
+        errmsg = '"eqw" requires a vector of ' // i_to_c(this%neqns) // ' values'
         return
       else if (any(this%eqw <= 0.0)) then
-        stat = 1
-        errmsg = 'eqw is <= 0.0'
+        stat = -1
+        errmsg = '"eqw" values must be > 0.0'
         return
       end if
-    else
-      this%eqw = [1.0_r8]
-    end if
 
+      !TODO: rename variable
+      call params%get('eltvsc', this%eltvsc, stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      if (size(this%eltvsc) /= this%neqns) then
+        stat = -1
+        errmsg = '"eltvsc" requires a vector of ' // i_to_c(this%neqns) // ' values'
+        return
+      else if (any(this%eltvsc < 0.0)) then
+        stat = -1
+        errmsg = '"eltvsc" values must be >= 0.0'
+        return
+      end if
+
+      !TODO: rename variable
+      call params%get('segspr', this%segspr, stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      if (size(this%segspr) /= this%neqns) then
+        stat = -1
+        errmsg = '"segspr" requires a vector of ' // i_to_c(this%neqns) // ' values'
+        return
+      else if (any(this%segspr < 0.0)) then
+        stat = -1
+        errmsg = '"segspr" values must be >= 0.0'
+        return
+      end if
+    end select
+
+    !TODO: rename variable
     call params%get('kreg', this%kreg, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
     select case (this%kreg)
     case (1,2) ! okay
     case default
-      stat = 1
-      errmsg = 'invalid value for kreg'
+      stat = -1
+      errmsg = 'invalid value for "kreg"'
       return
     end select
 
-    call params%get('segspr', this%segspr, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (size(this%segspr) /= this%neqns) then
-      stat = 1
-      errmsg = 'wrong number of values for segspr'
-      return
-    else if (any(this%segspr < 0.0)) then
-      stat = 1
-      errmsg = 'segspr is < 0.0'
-      return
-    end if
-
+    !TODO: rename variable
     call params%get('fdinc', this%fdinc, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
     if (this%fdinc <= 0.0) then
-      stat = 1
-      errmsg = ' fdinc <= 0.0'
+      stat = -1
+      errmsg = '"fdinc" must be > 0.0'
       return
     end if
 

@@ -9,12 +9,12 @@ module mfe_idaesol_model_type
   use mfe_precon_type
   use vector_class
   use mfe1_vector_type
-  use parameter_list_type
   use timer_tree_type
   implicit none
   private
 
   type, extends(idaesol_model), public :: mfe_idaesol_model
+    private
     integer :: nnode
     type(mfe_env), pointer :: env => null() ! reference only
     type(mfe_model), pointer :: model => null() ! reference only
@@ -37,6 +37,9 @@ contains
 
   subroutine init(this, env, model, params, stat, errmsg)
 
+    use parameter_list_type
+    use string_utilities, only: i_to_c
+
     class(mfe_idaesol_model), intent(out) :: this
     type(mfe_env), target, intent(in) :: env
     type(mfe_model), target, intent(in) :: model
@@ -45,38 +48,67 @@ contains
     character(:), allocatable, intent(out) :: errmsg
 
     this%env => env
-
-    this%nnode = model%nnode
     this%model => model
+    this%nnode = model%nnode
     allocate(this%dx(this%nnode-1))
+    allocate(this%ptol(this%model%nvars))
 
     call this%precon%init(this%env, this%model)
 
-    call params%get('dxmin', this%dxmin, stat=stat, errmsg=errmsg)
+    select case (this%model%neqns)
+    case (1)
+
+      call params%get('abs-u-tol', this%ptol(1), stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      if (this%ptol(1) <= 0.0) then
+        stat = -1
+        errmsg = '"abs-u-tol" must be > 0.0'
+        return
+      end if
+
+    case (2:)
+
+      block
+        real(r8), allocatable :: abs_u_tol(:)
+        call params%get('abs-u-tol', abs_u_tol, stat=stat, errmsg=errmsg)
+        if (stat /= 0) return
+        if (size(abs_u_tol) /= this%model%neqns) then
+          stat = -1
+          errmsg = '"abs-u-tol" requires a vector of ' // i_to_c(this%model%neqns) // ' values'
+          return
+        else if (any(abs_u_tol <= 0)) then
+          stat = -1
+          errmsg = '"abs-u-tol" values must be > 0.0'
+          return
+        end if
+        this%ptol(:this%model%neqns) = abs_u_tol
+      end block
+
+    end select
+
+    associate (abs_x_tol => this%ptol(this%model%nvars))
+      call params%get('abs-x-tol', abs_x_tol, stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      if (abs_x_tol <= 0) then
+        stat = -1
+        errmsg = '"abs-x-tol" must be > 0.0'
+        return
+      end if
+    end associate
+
+    call params%get('rel-dx-tol', this%rtol, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (this%rtol <= 0) then
+      stat = -1
+      errmsg = '"rel-dx-tol" must be > 0.0'
+      return
+    end if
+
+    call params%get('dxmin', this%dxmin, default=tiny(this%dxmin), stat=stat, errmsg=errmsg)
     if (stat /= 0) return
     if (this%dxmin < 0.0_r8) then !TODO: <= 0.0?
-      stat = 1
-      errmsg = 'dxmin is <= 0.0'
-      return
-    end if
-
-    call params%get('rtol', this%rtol, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (this%rtol <= 0.0_r8) then
-      stat = 1
-      errmsg = 'rtol is <= 0.0'
-      return
-    end if
-
-    call params%get('ptol', this%ptol, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (size(this%ptol) /= this%model%neqns+1) then
-      stat = 1
-      errmsg = 'wrong number of ptol values'
-      return
-    else if (any(this%ptol <= 0.0)) then
-      stat = 1
-      errmsg = 'ptol is <= 0'
+      stat = -1
+      errmsg = '"dxmin" must be > 0.0'
       return
     end if
 

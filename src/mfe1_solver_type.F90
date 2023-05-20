@@ -11,10 +11,11 @@ module mfe1_solver_type
   private
 
   type, public :: mfe1_solver
+    private
     type(mfe_env), pointer :: env => null() ! reference only
+    type(mfe_model), pointer :: model => null() ! reference only
     type(mfe_idaesol_model) :: integ_model
     type(idaesol) :: integ
-    type(mfe_model), pointer :: model => null()
   contains
     procedure :: init
     procedure :: set_initial_state

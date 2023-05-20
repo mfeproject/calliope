@@ -9,6 +9,7 @@ module mfe_precon_type
   private
 
   type, public :: mfe_precon
+    private
     type(mfe_env), pointer :: env => null() ! reference only
     type(mfe_model), pointer :: model => null() ! reference only
     type(btd_matrix) :: jac

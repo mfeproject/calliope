@@ -207,7 +207,7 @@ contains
     class(idaesol), intent(in) :: this
     integer, intent(in) :: unit
     write(unit,fmt='(/,a,i0,a,g0.5,a,g0.5)') &
-      'STEP=', this%seq, ', T=', this%uhist%last_time(), ', H=', this%hlast
+      'STEP=', this%seq, ', T=', this%uhist%last_time(), ', HLAST=', this%hlast
     write(unit,fmt='(a,i0,":",i0,a,5(i0,:,":"))') &
       'NFUN:NPC=', this%counters%pcfun_calls, this%counters%updpc_calls, &
       ', NPCF:NNR:NNF:NSR=', this%counters%updpc_failed, &

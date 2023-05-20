@@ -14,6 +14,7 @@ module mfe_sim_type
   private
 
   type, public :: mfe_sim
+    private
     type(mfe_env), pointer :: env => null() ! reference only
     type(mfe_model) :: model
     type(mfe1_solver) :: solver
@@ -22,7 +23,7 @@ module mfe_sim_type
     type(time_step_sync) :: ts_sync
     real(r8) :: tlast, hlast
     real(r8) :: dt_init
-    integer :: ofreq, mstep
+    integer :: output_freq, max_step
   contains
     procedure :: init
     procedure :: run
@@ -50,19 +51,34 @@ contains
     integer :: nnode, itmp
     real(r8) :: t_init
     real(r8), allocatable :: u_array(:,:)
+    type(parameter_list), pointer :: plist
     type(coord_grid) :: grid
     type(mfe1_vector) :: udot
 
     this%env => env
 
-    call grid%init(params, 'useg', 'niseg', 'ratio', stat, errmsg)
-    if (stat /= 0) return
+    if (params%is_sublist('initial-condition')) then
+      plist => params%sublist('initial-condition')
+      call grid%init(plist, 'useg', 'niseg', 'ratio', stat, errmsg)
+      if (stat /= 0) return
+    else
+      stat = -1
+      errmsg = 'missing "initial-conditions" sublist parameter'
+      return
+    end if
 
     call grid%get_grid(u_array)
     nnode = size(u_array,dim=2)
 
-    call this%model%init(nnode, params, stat, errmsg)
-    if (stat /= 0) return
+    if (params%is_sublist('mfe-model')) then
+      plist => params%sublist('mfe-model')
+      call this%model%init(nnode, plist, stat, errmsg)
+      if (stat /= 0) return
+    else
+      stat = -1
+      errmsg = 'missing "mfe-model" sublist parameter'
+      return
+    end if
 
     !! Ensure the initial solution is properly sized for the model
     if (size(u_array,dim=1) /= this%model%nvars) then
@@ -83,10 +99,28 @@ contains
 
     call this%model%set_boundary_values(this%u) ! get BV values from the initial solution
 
+    if (params%is_sublist('solver')) then
+      plist => params%sublist('solver')
+      call this%solver%init(this%env, this%model, plist, stat, errmsg)
+      if (stat /= 0) return
+    else
+      stat = -1
+      errmsg = 'missing "solver" sublist parameter'
+      return
+    end if
+
+    if (params%is_sublist('simulation')) then
+      plist => params%sublist('simulation')
+    else
+      stat = -1
+      errmsg = 'missing "simulation" sublist parameter'
+      return
+    end if
+
     block ! Solution output times
       real(r8), allocatable :: rarray(:)
       integer :: j
-      call params%get('output-times', rarray, stat=stat, errmsg=errmsg)
+      call plist%get('output-times', rarray, stat=stat, errmsg=errmsg)
       if (stat /= 0) return
       if (size(rarray) < 1) then
         stat = -1
@@ -102,21 +136,22 @@ contains
       end do
     end block
 
-    call params%get('mstep', this%mstep, default=huge(this%mstep), stat=stat, errmsg=errmsg)
+    call plist%get('max-step', this%max_step, default=huge(this%max_step), stat=stat, errmsg=errmsg)
     if (stat /= 0) return
-    if (this%mstep < 0) then
+    if (this%max_step < 0) then
       stat = -1
-      errmsg = 'mstep must be >= 0'
+      errmsg = '"max-step" must be >= 0'
       return
     end if
-    call params%get('ofreq', this%ofreq, stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    if (this%ofreq <= 0) this%ofreq = this%mstep
 
-    call params%get('t-init', t_init, stat=stat, errmsg=errmsg)
+    call plist%get('output-freq', this%output_freq, default=0, stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    if (this%output_freq <= 0) this%output_freq = this%max_step
+
+    call plist%get('t-init', t_init, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
 
-    call params%get('h-init', this%dt_init, stat=stat, errmsg=errmsg)
+    call plist%get('h-init', this%dt_init, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
     if (this%dt_init <= 0) then
       stat = -1
@@ -125,7 +160,7 @@ contains
     end if
 
     !! Look-ahead for hard events and associated time_step_sync object
-    call params%get('hard-event-lookahead', itmp, default=2, stat=stat, errmsg=errmsg)
+    call plist%get('hard-event-lookahead', itmp, default=2, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
     if (itmp < 1) then
       stat = -1
@@ -134,13 +169,10 @@ contains
     end if
     this%ts_sync = time_step_sync(itmp)
 
-    call this%solver%init(this%env, this%model, params, stat, errmsg)
-    if (stat /= 0) return
-
     call udot%init(this%u)
     call this%model%eval_udot(this%u, t_init, udot, stat)
     if (stat /= 0) then
-      stat = 1
+      stat = -1
       errmsg = 'failed to solve for the initial time derivative'
       return
     end if
@@ -189,10 +221,11 @@ contains
 
       !! PER STEP ACTIONS
       if (nstep > 0) then
-        if (mod(nstep,this%ofreq) == 0 .and. t_write /= t) then
+        if (mod(nstep,this%output_freq) == 0 .and. t_write /= t) then
           call this%solver%get_last_state_copy(this%u)  !TODO: get view?
           call write_soln(this%env%grf_unit, t, this%u)
           t_write = t
+          write_diag = .true.
         end if
         if (write_diag) then
           !TODO: use log%info for this
@@ -202,7 +235,7 @@ contains
         end if
       end if
 
-      if (nstep == this%mstep) then
+      if (nstep == this%max_step) then
         stat = 0
         errmsg = 'completed maximum number of time steps'
         exit

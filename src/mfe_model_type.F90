@@ -23,6 +23,8 @@ module mfe_model_type
     integer :: neqns, nvars, ncell, nnode
     type(mfe1_disc) :: disc
     type(index_func), allocatable :: bc_dir(:)
+    !! Persistent temporary work space
+    real(r8), allocatable, private :: diag(:,:,:)
   contains
     procedure :: init
     procedure :: set_boundary_values
@@ -35,6 +37,7 @@ contains
   subroutine init(this, nnode, params, stat, errmsg)
 
     use parameter_list_type
+    use string_utilities, only: i_to_c
 
     class(mfe_model), intent(out), target :: this
     integer, intent(in) :: nnode
@@ -42,52 +45,73 @@ contains
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
+    type(parameter_list), pointer :: plist
+
     this%nnode = nnode
     this%ncell = nnode - 1
     call this%disc%init(this%ncell, params, stat, errmsg)
+    if (stat /= 0) return
     this%neqns = this%disc%neqns
     this%nvars = this%neqns + 1
 
-    block ! Initialize boundary conditions
-      integer :: i, n
-      logical, allocatable :: bc_left_u_type(:), bc_right_u_type(:)
-      logical :: bc_left_x_type, bc_right_x_type
+    allocate(this%diag(this%nvars,this%nvars,this%nnode))
+    allocate(this%bc_dir(this%nvars))
 
-      allocate(this%bc_dir(this%nvars))
-      do i = 1, this%neqns
-        n = 0
-        call params%get('bc-left-u-type', bc_left_u_type)
-        call params%get('bc-right-u-type', bc_right_u_type)
-        if (bc_left_u_type(i)) n = n + 1
-        if (bc_right_u_type(i)) n = n + 1
-        allocate(this%bc_dir(i)%index(n))
-        !allocate(this%bc_dir(i)%value(n))  ! allocated by set_boundary_values
-        n = 0
-        if (bc_left_u_type(i)) then
-          n = n + 1
-          this%bc_dir(i)%index(n) = 1
+    if (params%is_sublist('boundary-conditions')) then
+      plist => params%sublist('boundary-conditions')
+    else
+      stat = -1
+      errmsg = 'missing "boundary-conditions" sublist parameter'
+      return
+    end if
+
+    !! Configure the Dirichlet boundary conditions
+    select case (this%neqns)
+    case (1)  ! Scalar PDE
+
+      block
+        logical :: left, right
+        call plist%get('dir-left', left, stat=stat, errmsg=errmsg)
+        if (stat /= 0) return
+        call plist%get('dir-right', right, stat=stat, errmsg=errmsg)
+        if (stat /= 0) return
+        this%bc_dir(1)%index = pack([1, this%nnode], [left, right])
+      end block
+
+    case (2:) ! PDE system
+
+      block
+        integer :: i
+        logical, allocatable :: left(:), right(:)
+        call plist%get('dir-left', left, stat=stat, errmsg=errmsg)
+        if (stat /= 0) return
+        if (size(left) /= this%neqns) then
+          stat = -1
+          errmsg = '"dir-left" requires a vector of ' // i_to_c(this%neqns) // ' values'
+          return
         end if
-        if (bc_right_u_type(i)) then
-          n = n + 1
-          this%bc_dir(i)%index(n) = this%nnode
+        call plist%get('dir-right', right, stat=stat, errmsg=errmsg)
+        if (stat /= 0) return
+        if (size(right) /= this%neqns) then
+          stat = -1
+          errmsg = '"dir-right" requires a vector of ' // i_to_c(this%neqns) // ' values'
+          return
         end if
-      end do
-      n = 0
-      call params%get('bc-left-x-type', bc_left_x_type)
-      call params%get('bc-right-x-type', bc_right_x_type)
-      if (bc_left_x_type) n = n + 1
-      if (bc_right_x_type) n = n + 1
-      allocate(this%bc_dir(this%nvars)%index(n))
-      !allocate(this%bc_dir(this%nvars)%value(n))  ! allocated by set_boundary_values
-      n = 0
-      if (bc_left_x_type) then
-        n = n + 1
-        this%bc_dir(this%nvars)%index(n) = 1
-      end if
-      if (bc_right_x_type) then
-        n = n + 1
-        this%bc_dir(this%nvars)%index(n) = this%nnode
-      end if
+        do i = 1, this%neqns
+          this%bc_dir(i)%index = pack([1, this%nnode], [left(i), right(i)])
+        end do
+      end block
+
+    end select
+
+    !! Configure fixed/free boundary nodes
+    block
+      logical :: left, right
+      call params%get('fixed-node-left', left, default=.true., stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      call params%get('fixed-node-right', right, default=.true., stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      this%bc_dir(this%nvars)%index = pack([1, this%nnode], [left, right])
     end block
 
   end subroutine init
@@ -116,7 +140,6 @@ contains
     real(r8), intent(in) :: t
 
     integer :: j, k, n
-    real(r8) :: diag(this%disc%neqns+1,this%disc%neqns+1,u%nnode)
 
     call this%disc%update(u, udot)
     call this%disc%compute_local_residual(t)
@@ -132,21 +155,21 @@ contains
 
     !! Mass matrix block diagonal
     call this%disc%eval_mass_matrix(diag_only=.true.)
-    call this%disc%assemble_diagonal(diag)
+    call this%disc%assemble_diagonal(this%diag)
 
     !! BC modifications to diagonal
     do k = 1, size(this%bc_dir)
       do j = 1, size(this%bc_dir(k)%index)
         n = this%bc_dir(k)%index(j)
-        diag(:,k,n) = 0.0_r8
-        diag(k,:,n) = 0.0_r8
-        diag(k,k,n) = 1.0_r8
+        this%diag(:,k,n) = 0.0_r8
+        this%diag(k,:,n) = 0.0_r8
+        this%diag(k,k,n) = 1.0_r8
       end do
     end do
 
     !! Multiply by the inverse of the block diagonal
-    call vfct(diag)
-    call vslv(diag, r%array)
+    call vfct(this%diag)
+    call vslv(this%diag, r%array)
 
   end subroutine eval_residual
 
