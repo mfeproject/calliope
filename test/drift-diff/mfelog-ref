@@ -1,0 +1,60 @@
+{
+  "mfe-model": {
+    "pde-library": "libdrift-diff.so",
+    "pde-params": {
+      "lambda": 0.10000E-04,
+      "eps": 0.10000,
+      "u-scale-factor": 18.421,
+      "v-scale-factor": 1.0000
+    },
+    "boundary-conditions": {
+      "dir-left": [true, true],
+      "dir-right": [true, true]
+    },
+    "eqw": [1.0000, 0.10000E-01],
+    "kreg": 2,
+    "eltvsc": [0.40000E-05, 0.40000E-03],
+    "segspr": [0.0000, 0.0000],
+    "fdinc": 0.10000E-07
+  },
+  "initial-condition": {
+    "niseg": [4, 6, 10, 6, 4],
+    "useg": 
+    [[0.0000, 0.0000, 0.0000]
+    ,[0.60000, 0.0000, 0.75000E-01]
+    ,[0.70000, 0.0000, 0.87500E-01]
+    ,[0.80000, -1.0000, 0.10000]
+    ,[0.90000, -1.0000, 0.11250]
+    ,[1.0000, -1.0000, 0.12500]]
+  },
+  "simulation": {
+    "t-init": 0.0000,
+    "h-init": 0.10000E-05,
+    "max-step": 2000,
+    "output-times": [1.0000, 5.0000, 40.000],
+    "output-freq": 0
+  },
+  "solver": {
+    "abs-u-tol": [0.10000E-03, 0.10000E-03],
+    "abs-x-tol": 0.10000E-03,
+    "rel-dx-tol": 0.10000,
+    "nlk-max-iter": 4,
+    "nlk-vec-tol": 0.10000,
+    "dxmin": 0.0000,
+    "verbose-stepping": true
+  }
+}
+
+Starting integration at t = 0.00000
+
+STEP=80, T=1.0132, HLAST=0.39558E-01
+NFUN:NPC=212:12, NPCF:NNR:NNF:NSR=0:2:0:0
+
+STEP=145, T=5.1061, HLAST=0.16971
+NFUN:NPC=424:15, NPCF:NNR:NNF:NSR=0:5:0:0
+
+STEP=253, T=40.150, HLAST=0.44145
+NFUN:NPC=777:22, NPCF:NNR:NNF:NSR=0:12:0:0
+
+completed integration to final time t = 40.1502
+Normal terminatation on 2023-05-22 at 09:03:01 -0600

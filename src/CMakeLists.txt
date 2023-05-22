@@ -37,6 +37,12 @@ target_link_libraries(navier-stokes common)
 add_library(conv-diff conv_diff_type.F90)
 target_link_libraries(conv-diff common)
 
+add_library(burgers burgers_type.F90)
+target_link_libraries(burgers common)
+
+add_library(drift-diff drift_diff_type.F90)
+target_link_libraries(drift-diff common)
+
 ## # Create all the Fortran module files in a directory at the root build directory
 ## SET(Calliope_MODULE_DIR ${Calliope_BINARY_DIR}/mod_files/)
 ## SET(CMAKE_Fortran_MODULE_DIRECTORY ${Calliope_MODULE_DIR})

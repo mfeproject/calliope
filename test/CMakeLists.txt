@@ -1,3 +1,5 @@
 add_subdirectory(sod)
 add_subdirectory(boundary-layer)
+add_subdirectory(burgers)
+add_subdirectory(drift-diff)
 #add_subdirectory(idaesol_type)
