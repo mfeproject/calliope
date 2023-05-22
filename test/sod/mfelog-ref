@@ -1,103 +1,88 @@
+{
+  "mfe-model": {
+    "pde-library": "libnavier-stokes.so",
+    "pde-params": {
+      "visc": 0.10000E-03
+    },
+    "boundary-conditions": {
+      "dir-left": [false, true, false],
+      "dir-right": [false, true, false]
+    },
+    "kreg": 2,
+    "eltvsc": [0.25000E-08, 0.25000E-08, 0.25000E-08],
+    "segspr": [0.0000, 0.0000, 0.0000],
+    "fdinc": 0.10000E-07
+  },
+  "initial-condition": {
+    "niseg": [6, 10, 15, 25, 10, 6],
+    "useg": 
+    [[0.0000, 0.10000, 0.0000, 0.25000]
+    ,[0.48000, 0.10000, 0.0000, 0.25000]
+    ,[0.49700, 0.10000, 0.0000, 0.25000]
+    ,[0.50000, 0.56250E-01, 0.0000, 0.13750]
+    ,[0.50300, 0.12500E-01, 0.0000, 0.25000E-01]
+    ,[0.52000, 0.12500E-01, 0.0000, 0.25000E-01]
+    ,[1.0000, 0.12500E-01, 0.0000, 0.25000E-01]]
+  },
+  "simulation": {
+    "t-init": 0.0000,
+    "h-init": 0.10000E-07,
+    "max-step": 2000,
+    "output-times": [0.10000E-03, 0.10000E-02, 0.10000E-01, 0.10000, 0.20000, 0.28000, 0.28400, 0.28800, 0.29200, 0.29600, 0.30000, 0.40000],
+    "output-freq": 0
+  },
+  "solver": {
+    "abs-u-tol": [0.10000E-03, 0.10000E-03, 0.10000E-03],
+    "abs-x-tol": 0.10000E-02,
+    "rel-dx-tol": 0.10000,
+    "nlk-max-iter": 4,
+    "nlk-vec-tol": 0.10000,
+    "dxmin": 0.0000,
+    "verbose-stepping": true
+  }
+}
 
+Starting integration at t = 0.00000
 
-I N I T I A L   C O N D I T I O N S
+STEP=15, T=0.11688E-03, HLAST=0.19583E-04
+NFUN:NPC=27:8, NPCF:NNR:NNF:NSR=0:0:0:0
 
-  Mesh segments (NSEG)         =     6
-  Elements per segment (NISEG) =     6    10    15    25    10     6
-  Initial solution (USEG)      =  0.0000E+00  1.0000E-01  0.0000E+00  2.5000E-01
-                               =  4.8000E-01  1.0000E-01  0.0000E+00  2.5000E-01
-                               =  4.9700E-01  1.0000E-01  0.0000E+00  2.5000E-01
-                               =  5.0000E-01  5.6250E-02  0.0000E+00  1.3750E-01
-                               =  5.0300E-01  1.2500E-02  0.0000E+00  2.5000E-02
-                               =  5.2000E-01  1.2500E-02  0.0000E+00  2.5000E-02
-                               =  1.0000E+00  1.2500E-02  0.0000E+00  2.5000E-02
+STEP=30, T=0.10510E-02, HLAST=0.91024E-04
+NFUN:NPC=67:9, NPCF:NNR:NNF:NSR=0:0:0:0
 
-  Left-end boundary conditions =     0     1     0
-  Right-end boundary conditions=     0     1     0
-  Left-end node type           =     1
-  Right-end node type          =     1
+STEP=81, T=0.10106E-01, HLAST=0.26394E-03
+NFUN:NPC=294:24, NPCF:NNR:NNF:NSR=0:14:3:0
 
+STEP=256, T=0.10022, HLAST=0.42809E-03
+NFUN:NPC=925:52, NPCF:NNR:NNF:NSR=0:40:5:0
 
-M F E   P A R A M E T E R S
+STEP=379, T=0.20016, HLAST=0.82819E-03
+NFUN:NPC=1351:70, NPCF:NNR:NNF:NSR=0:57:7:0
+check_state: bad element 67
+check_state: bad element 5
 
-  Equation weights (EQW)       =  1.0000E+00  1.0000E+00  1.0000E+00
-  Segment visc type (KREG)     =     2
-  Segment visc coef (ELTVSC)   =  2.5000E-09  2.5000E-09  2.5000E-09
-  Segment spring coef (SEGSPR) =  0.0000E+00  0.0000E+00  0.0000E+00
-  Minimum element size (DXMIN) =  0.0000E+00
-  Jacob FD increment (FDINC)   =  1.0000E-08
+STEP=461, T=0.28030, HLAST=0.18891E-02
+NFUN:NPC=1649:87, NPCF:NNR:NNF:NSR=0:68:10:3
+check_state: bad element 70
 
-  Solver debug level (DEBUG)   =     2
-  Output frequency (OFREQ)     =     0
-  Maximum steps (MSTEP)        =  2000
-  Output times (TOUT)          =  0.0000E+00  1.0000E-04  1.0000E-03  1.0000E-02
-                                  1.0000E-01  2.0000E-01  2.8000E-01  2.8400E-01
-                                  2.8800E-01  2.9200E-01  2.9600E-01  3.0000E-01
-                                  4.0000E-01
+STEP=471, T=0.28405, HLAST=0.39159E-03
+NFUN:NPC=1688:90, NPCF:NNR:NNF:NSR=0:70:11:4
+check_state: bad element 72
 
-  Relative dx tolerance (RTOL) =  1.0000E-01
-  U predictor tolerance (PTOL) =  1.0000E-04  1.0000E-04  1.0000E-04
-  X predictor tolerance (PTOL) =  1.0000E-03
+STEP=550, T=0.28813, HLAST=0.15159E-03
+NFUN:NPC=2022:111, NPCF:NNR:NNF:NSR=0:90:14:4
 
-  Initial time step (H)        =  1.0000E-08
-  Time step lower bound (HLB)  =  1.0000E-10
-  Time step upper bound (HUB)  =  1.0000E+10
-  Jacob update margin (MARGIN) =  2.0000E+00
-  FPI tolerance (NTOL)         =  1.0000E-01
-  Max FP iterations (MITR)     =     4
+STEP=567, T=0.29202, HLAST=0.29211E-03
+NFUN:NPC=2084:113, NPCF:NNR:NNF:NSR=0:92:14:4
 
-  FPA vector tolerance (VTOL)  =  1.0000E-01
-  Max FPA vectors (MVEC)       =     3
+STEP=576, T=0.29613, HLAST=0.66168E-03
+NFUN:NPC=2115:115, NPCF:NNR:NNF:NSR=0:94:14:4
 
+STEP=587, T=0.30002, HLAST=0.25228E-03
+NFUN:NPC=2172:119, NPCF:NNR:NNF:NSR=0:98:16:4
 
-P R O B L E M   S P E C I F I C   P A R A M E T E R S
+STEP=709, T=0.40016, HLAST=0.47600E-03
+NFUN:NPC=2627:144, NPCF:NNR:NNF:NSR=0:119:21:4
 
-  PDE viscosity coefficient    =  1.0000E-04
-** BEGINNING SOLUTION AT T =   0.000E+00     
-
-STEP=15, T=0.11588E-03, H=0.19138E-04
-NFUN:NPC=29:5, NPCF:NNR:NNF:NSR=0:0:0:0
-
-STEP=30, T=0.11026E-02, H=0.11065E-03
-NFUN:NPC=69:6, NPCF:NNR:NNF:NSR=0:0:0:0
-
-STEP=81, T=0.10141E-01, H=0.24759E-03
-NFUN:NPC=297:23, NPCF:NNR:NNF:NSR=0:17:2:0
-
-STEP=254, T=0.10025, H=0.71174E-03
-NFUN:NPC=925:46, NPCF:NNR:NNF:NSR=0:39:3:0
-
-STEP=377, T=0.20024, H=0.14100E-02
-NFUN:NPC=1360:62, NPCF:NNR:NNF:NSR=0:54:5:1
-
-** CHECK_SOLN: BAD ELEMENT (005)
-
-** CHECK_SOLN: BAD ELEMENT (069)
-
-STEP=461, T=0.28058, H=0.16516E-02
-NFUN:NPC=1637:78, NPCF:NNR:NNF:NSR=0:63:7:3
-
-** CHECK_SOLN: BAD ELEMENT (071)
-
-STEP=470, T=0.28430, H=0.64424E-03
-NFUN:NPC=1680:82, NPCF:NNR:NNF:NSR=0:67:8:3
-
-** CHECK_SOLN: BAD ELEMENT (072)
-
-STEP=548, T=0.28820, H=0.35762E-03
-NFUN:NPC=1996:101, NPCF:NNR:NNF:NSR=0:85:10:4
-
-STEP=564, T=0.29241, H=0.43792E-03
-NFUN:NPC=2056:104, NPCF:NNR:NNF:NSR=0:88:11:4
-
-STEP=573, T=0.29621, H=0.34650E-03
-NFUN:NPC=2087:105, NPCF:NNR:NNF:NSR=0:89:11:4
-
-STEP=586, T=0.30019, H=0.39248E-03
-NFUN:NPC=2137:109, NPCF:NNR:NNF:NSR=0:92:12:4
-
-** CHECK_SOLN: BAD ELEMENT (070)
-
-STEP=720, T=0.40000, H=0.19261E-03
-NFUN:NPC=2644:134, NPCF:NNR:NNF:NSR=0:114:17:4
-** Integrated to final TOUT.  Done.
+completed integration to final time t = 0.400156
+Normal terminatation on 2023-05-22 at 07:45:20 -0600

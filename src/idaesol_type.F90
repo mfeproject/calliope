@@ -148,7 +148,7 @@ module idaesol_type
 
   real(r8), parameter, private :: RMIN = 0.25_r8
   real(r8), parameter, private :: RMAX = 4.0_r8
-  real(r8), parameter, private :: MARGIN = 3.0_r8
+  real(r8), parameter, private :: MARGIN = 2.0_r8
 
   !! Successful STATUS return codes:
   integer, parameter, public :: SOLVED_TO_TOUT = 1
@@ -470,11 +470,11 @@ contains
     end if
 
     !! Check the predicted solution for admissibility.
-    call this%model%check_state (this%up, 0, stat)
+    call this%model%check_state(this%up, 0, stat)
     if (stat /= 0) then ! it's bad; cut h and retry.
       this%counters%rejected_steps = this%counters%rejected_steps + 1
       if (this%verbose) write(this%unit,fmt=7)
-      hnext = 0.25_r8 * h
+      hnext = 0.5_r8 * h
       this%freeze_count = 1
       this%usable_pc = .false.
       stat = 3
@@ -514,13 +514,13 @@ contains
       if (fresh_pc) then ! preconditioner was fresh; cut h and return error condition.
         if (stat == 2) then ! inadmissible iterate generated
           this%counters%rejected_steps = this%counters%rejected_steps + 1
-          hnext = 0.25_r8 * h
+          hnext = 0.5_r8 * h
           this%freeze_count = 1
           this%usable_pc = .false.
         else
           this%counters%failed_bce = this%counters%failed_bce + 1
           hnext = 0.5_r8 * h
-          this%freeze_count = 2
+          this%freeze_count = 1
         end if
         stat = 1
         return
@@ -541,7 +541,7 @@ contains
       call this%du%copy(u)
       call this%du%update(-1.0_r8, this%up)
       call this%model%du_norm(u, this%du, perr)
-      if (perr < 4.0_r8) then ! accept the step.
+      if (perr <= 4.0_r8) then ! accept the step.
         if (this%verbose) write(this%unit,fmt=4) perr
         stat = 0
       else ! reject the step; cut h and return error condition.
