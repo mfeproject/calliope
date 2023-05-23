@@ -41,7 +41,7 @@ program mfe1
   use mfe_sim_type
   implicit none
 
-  integer :: i, stat, lun
+  integer :: i, stat, lun, n, narg
   character(255) :: arg
   character(:), allocatable :: prog, infile, errmsg
   type(parameter_list), pointer :: params
@@ -56,17 +56,40 @@ program mfe1
   call env%timer%start('simulation')
   call env%timer%start('initialization')
 
+  !FIXME: command line parsing is fragile
+  !TODO: move command line parsing to a separate procedure
+
   call get_command_argument(0, arg)
   i = scan(arg, '/', back=.true.)
   prog = trim(arg(i+1:))  ! remove the leading path component, if any
 
-  if (command_argument_count() /= 1) then
-    write(error_unit,'(3a)') 'Usage: ', prog, ' INFILE'
+  narg = command_argument_count()
+  if (narg < 1) then
+    write(error_unit,'(3a)') 'Usage: ', prog, ' [-L <pde-lib-dir>] INFILE'
     stop 1
   end if
 
-  call get_command_argument(1,arg)
+  n = 1
+  call get_command_argument(n, arg)
+  if (arg == '-L') then
+    n = n + 1
+    call get_command_argument(n, arg)
+    i = scan(arg, '/', back=.true.)
+    if (i == len_trim(arg)) i = i - 1 ! remove trailing slash, if any
+    env%pde_lib_dir = trim(arg) // '/'
+
+    n = n + 1
+    call get_command_argument(n, arg)
+  else
+    env%pde_lib_dir = ''
+  end if
+
   infile = trim(arg)
+
+  if (narg /= n) then
+    write(error_unit,'(3a)') 'Usage: ', prog, ' [-L <pde-lib-dir>] INFILE'
+    stop 1
+  end if
 
   open(newunit=lun, file=infile, action='read', access='stream')
   call parameter_list_from_json_stream(lun, params, errmsg)

@@ -27,10 +27,12 @@ target_link_libraries(mfe1 common)
 
 set(BUILD_SHARED_LIBS YES)
 
-add_library(common OBJECT pde_class.F90 mfe1_disc_core_type.F90)
-set_target_properties(common PROPERTIES POSITION_INDEPENDENT_CODE ON)
+#add_library(common OBJECT pde_class.F90 mfe1_disc_core_type.F90)
+#set_target_properties(common PROPERTIES POSITION_INDEPENDENT_CODE ON)
+add_library(common pde_class.F90 mfe1_disc_core_type.F90)
 target_link_libraries(common petaca)
 
+# LIBRARIES IMPLEMENTING THE PDE CLASS
 add_library(navier-stokes navier_stokes_type.F90)
 target_link_libraries(navier-stokes common)
 
@@ -43,10 +45,17 @@ target_link_libraries(burgers common)
 add_library(drift-diff drift_diff_type.F90)
 target_link_libraries(drift-diff common)
 
-## # Create all the Fortran module files in a directory at the root build directory
-## SET(Calliope_MODULE_DIR ${Calliope_BINARY_DIR}/mod_files/)
-## SET(CMAKE_Fortran_MODULE_DIRECTORY ${Calliope_MODULE_DIR})
-##
-## # Default is an debug build
-## SET(CMAKE_BUILD_TYPE DEBUG CACHE STRING "Build type")
-##
+set(PDELIBS common navier-stokes conv-diff burgers drift-diff)
+
+install(TARGETS ${PDELIBS})
+
+# User-facing executable is a shell script that adds an argument to the command
+# line giving the absolute path to the PDE library directory. Actual executable
+# goes into the lib directory.
+install(PROGRAMS mfe1.sh
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/bin
+    RENAME mfe1
+)
+install(TARGETS mfe1
+    DESTINATION ${CMAKE_INSTALL_PREFIX}/lib
+)

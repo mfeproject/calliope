@@ -45,12 +45,14 @@ contains
     character(:), allocatable, intent(out) :: errmsg
 
     real(r8) :: rtmp
-    character(:), allocatable :: string
+    character(:), allocatable :: string, libdir
     type(parameter_list), pointer :: plist
 
     call params%get('pde-library', string, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
-    call load_pde(string, this%p, stat, errmsg)
+    call params%get('pde-lib-dir', libdir, default='', stat=stat, errmsg=errmsg)
+    if (stat /= 0) return
+    call load_pde(libdir // string, this%p, stat, errmsg)
     if (stat /= 0) return
 
     if (params%is_sublist('pde-params')) then
