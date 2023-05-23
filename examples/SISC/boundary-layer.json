@@ -1,0 +1,30 @@
+// Convection-Diffusion Boundary Layer Problem
+// Similar to Figures 6.1
+{
+  "mfe-model": {
+    "pde-library": "libconv-diff.so",
+    "pde-params": {"visc": 1e-3},
+    "boundary-conditions": {"dir-left": true, "dir-right": true},
+    "kreg": 2,
+    "eltvsc": 0.25e-6,
+    "segspr": 0.0,
+    "dxmin": 0.0,
+    "fdinc": 1e-8
+  },
+  "initial-condition": {
+    "niseg": [20],
+    "useg":
+      [[0.0, 0.0]
+      ,[1.0, 1.0]]
+  },
+  "simulation": {
+    "t-init": 0.0,
+    "h-init": 1e-4,
+    "output-times": [0.2, 0.4, 0.6, 0.8, 1.0, 2.0, 4.0, 6.0, 8.0, 10.0, 500.0]
+  },
+  "solver": {
+    "abs-u-tol": 1e-3,
+    "abs-x-tol": 1e-3,
+    "rel-dx-tol": 0.1
+  }
+}

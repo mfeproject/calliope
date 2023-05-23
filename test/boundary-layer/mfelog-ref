@@ -1,0 +1,73 @@
+{
+  "mfe-model": {
+    "pde-library": "libconv-diff.so",
+    "pde-params": {
+      "visc": 0.10000E-02
+    },
+    "boundary-conditions": {
+      "dir-left": true,
+      "dir-right": true
+    },
+    "kreg": 2,
+    "eltvsc": 0.25000E-08,
+    "segspr": 0.0000,
+    "dxmin": 0.0000,
+    "fdinc": 0.10000E-07
+  },
+  "initial-condition": {
+    "niseg": [20],
+    "useg": 
+    [[0.0000, 0.0000]
+    ,[1.0000, 1.0000]]
+  },
+  "simulation": {
+    "t-init": 0.0000,
+    "h-init": 0.10000E-03,
+    "max-step": 2000,
+    "output-times": [0.20000, 0.40000, 0.60000, 0.80000, 1.0000, 2.0000, 4.0000, 6.0000, 8.0000, 10.000, 500.00],
+    "output-freq": 0
+  },
+  "solver": {
+    "abs-u-tol": 0.10000E-03,
+    "abs-x-tol": 0.10000E-03,
+    "rel-dx-tol": 0.10000,
+    "nlk-max-iter": 4,
+    "nlk-vec-tol": 0.10000,
+    "verbose-stepping": true
+  }
+}
+
+Starting integration at t = 0.00000
+
+STEP=282, T=0.20010, HLAST=0.14777E-02
+NFUN:NPC=900:43, NPCF:NNR:NNF:NSR=0:34:1:2
+
+STEP=451, T=0.40160, HLAST=0.26540E-02
+NFUN:NPC=1436:62, NPCF:NNR:NNF:NSR=0:50:1:2
+
+STEP=555, T=0.60163, HLAST=0.19001E-02
+NFUN:NPC=1777:79, NPCF:NNR:NNF:NSR=0:63:1:4
+
+STEP=586, T=0.82253, HLAST=0.28573E-01
+NFUN:NPC=1868:85, NPCF:NNR:NNF:NSR=0:66:1:4
+
+STEP=664, T=1.0003, HLAST=0.87952E-03
+NFUN:NPC=2107:97, NPCF:NNR:NNF:NSR=0:72:1:4
+
+STEP=705, T=2.2786, HLAST=0.45421
+NFUN:NPC=2217:103, NPCF:NNR:NNF:NSR=0:74:1:4
+
+STEP=708, T=4.3378, HLAST=0.83795
+NFUN:NPC=2223:104, NPCF:NNR:NNF:NSR=0:74:1:4
+
+STEP=710, T=7.1892, HLAST=1.7246
+NFUN:NPC=2227:104, NPCF:NNR:NNF:NSR=0:74:1:4
+
+STEP=711, T=10.331, HLAST=3.1415
+NFUN:NPC=2229:105, NPCF:NNR:NNF:NSR=0:74:1:4
+
+STEP=717, T=1518.9, HLAST=1057.8
+NFUN:NPC=2240:109, NPCF:NNR:NNF:NSR=0:74:1:4
+
+completed integration to final time t = 1518.94
+Normal terminatation on 2023-05-23 at 13:55:58 -0600

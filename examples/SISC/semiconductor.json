@@ -1,0 +1,39 @@
+// Drift-Diffusion Equations for Semiconductor Device Modelling
+// Input for Figure 7.1
+
+{
+  "mfe-model": {
+    "pde-library": "libdrift-diff.so",
+    "pde-params": {"lambda": 1e-4, "eps": 0.1,
+        "u-scale-factor": 18.4207, "v-scale-factor": 1.0},
+    "boundary-conditions": {
+      "dir-left": [true, true],
+      "dir-right": [true, true]
+    },
+    "eqw": [1.0, 0.01],
+    "kreg": 2,
+    "eltvsc": [4e-6, 4e-4],
+    "segspr": [0.0, 0.0],
+    "fdinc": 1e-8
+  },
+  "initial-condition": {
+    "niseg": [4, 6, 10, 6, 4],
+    "useg":
+      [[0.0,  0.0, 0.0000]
+      ,[0.6,  0.0, 0.0750]
+      ,[0.7,  0.0, 0.0875]
+      ,[0.8, -1.0, 0.1000]
+      ,[0.9, -1.0, 0.1125]
+      ,[1.0, -1.0, 0.1250]]
+  },
+  "simulation": {
+    "t-init": 0.0,
+    "h-init": 1.0e-6,
+    "output-times": [1.0, 5.0, 40.0]
+  },
+  "solver": {
+    "abs-u-tol": [1e-3, 1e-3],
+    "abs-x-tol": 1e-3,
+    "rel-dx-tol": 0.1
+  }
+}
