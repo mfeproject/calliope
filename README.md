@@ -77,3 +77,7 @@ Many tools are capable of visualizing this 1D data. But note that the custom
 graphics program `gp1` from the legacy GWMFE1DS code,
 https://github.com/mfeproject/legacy-gwmfe/tree/master/gwmfe1ds,
 is able to read this file.
+
+## Documentation
+See [doc/input-format.md](doc/input-format.md) for documentation of the input
+file format.
