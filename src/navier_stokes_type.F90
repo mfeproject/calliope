@@ -4,14 +4,13 @@ module navier_stokes_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use pde_class
-  use mfe1_disc_core_type
   use parameter_list_type
   implicit none
   private
 
   type, extends(pde), public :: navier_stokes
     private
-    real(r8) :: visc
+    real(r8) :: lapl_coef(2,3)
   contains
     procedure, nopass :: neqns
     procedure :: init
@@ -35,61 +34,55 @@ contains
     cp = c_loc(box)
   end subroutine
 
-  subroutine init(this, disc, params, stat, errmsg)
+  subroutine init(this, eqw, params, stat, errmsg)
     use parameter_list_type
     class(navier_stokes), intent(out) :: this
-    type(mfe1_disc_core), intent(in), target :: disc
+    real(r8), intent(in) :: eqw(:)
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
-    this%disc => disc
-    call params%get('visc', this%visc, stat=stat, errmsg=errmsg)
+    real(r8) :: visc
+    this%eqw = eqw(1:3)
+    call params%get('visc', visc, stat=stat, errmsg=errmsg)
+    this%lapl_coef = spread(this%eqw*visc, dim=1, ncopies=2)
   end subroutine
 
-  subroutine rhs(this, t)
+  pure subroutine rhs(this, t, cdata, gx, gu)
+
+    use cell_data_type
+    use pde_utilities, only: add_lapl
 
     class(navier_stokes), intent(inout) :: this
     real(r8), intent(in) :: t
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(out) :: gx(:), gu(:,:)
 
-    integer :: i, k
-    real(r8) :: rx1, rx2, term
+    integer :: k
+    real(r8) :: term
     real(r8) :: umid(3), f1(3), f2(3), favg(3)
     real(r8), parameter :: c1 = 1.0_r8 / 6.0_r8, c2 = 4.0_r8 / 6.0_r8
 
-    associate (disc => this%disc)
+    f1 = flux(cdata%u(:,1)) ! flux at left endpoint
+    f2 = flux(cdata%u(:,2)) ! flux at right endpoint
+    umid = 0.5_r8 * (cdata%u(:,1) + cdata%u(:,2)) ! unknowns at midpoint
+    favg = c1*(f1 + f2) + c2*flux(umid) ! average flux (Simpson)
 
-    do i = 1, disc%ncell
+    gx(1) = 0.0_r8
+    gx(2) = 0.0_r8
 
-      f1 = flux(disc%u(:3,1,i))                      ! Flux at left endpoint.
-      f2 = flux(disc%u(:3,2,i))                      ! Flux at right endpoint.
-      umid = 0.5_r8 * (disc%u(:3,1,i) + disc%u(:3,2,i))   ! Variables at midpoint.
-      favg = c1 * (f1 + f2) + c2 * flux(umid)   ! Average flux (Simpson).
+    do k = 1, 3
+      term = this%eqw(k)*(favg(k) - f1(k))
+      gx(1)   = gx(1) - term*cdata%nx(k)
+      gu(k,1) =       - term*cdata%nu(k)
 
-      rx1 = 0.0_r8
-      rx2 = 0.0_r8
-
-      do k = 1, 3
-
-        term = (disc%eqw(k) * (favg(k) - f1(k)))
-        rx1 = rx1 - term * disc%n(1,k,i)
-        disc%r(k,1,i) = - term * disc%n(2,k,i)
-
-        term = (disc%eqw(k) * (f2(k) - favg(k)))
-        rx2 = rx2 - term * disc%n(1,k,i)
-        disc%r(k,2,i) = - term * disc%n(2,k,i)
-
-      end do
-
-      disc%r(4,1,i) = rx1
-      disc%r(4,2,i) = rx2
-
+      term = this%eqw(k)*(f2(k) - favg(k))
+      gx(2)   = gx(2) - term*cdata%nx(k)
+      gu(k,2) =       - term*cdata%nu(k)
     end do
 
-    call disc%laplacian(eqno=1, coef=this%visc)
-    call disc%laplacian(eqno=2, coef=this%visc)
-    call disc%laplacian(eqno=3, coef=this%visc)
-
-    end associate
+    do k = 1, 3
+      call add_lapl(cdata, k, this%lapl_coef(:,k), gx, gu)
+    end do
 
   contains
 

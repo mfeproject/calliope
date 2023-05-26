@@ -29,6 +29,8 @@ module mfe_model_type
     procedure :: set_boundary_values
     procedure :: eval_residual
     procedure :: eval_udot
+    procedure :: compute_mass_matrix
+    procedure :: add_dfdy
   end type
 
 contains
@@ -140,9 +142,7 @@ contains
 
     integer :: j, k, n
 
-    call this%disc%update(u, udot)
-    call this%disc%compute_local_residual(t)
-    call this%disc%assemble_vector(r)
+    call compute_res(this, t, u, udot, r)
 
     !! BC modifications
     do k = 1, size(this%bc_dir)
@@ -153,8 +153,7 @@ contains
     end do
 
     !! Mass matrix block diagonal
-    call this%disc%eval_mass_matrix(diag_only=.true.)
-    call this%disc%assemble_diagonal(this%diag)
+    call compute_mass_matrix_diag(this, t, u, this%diag)
 
     !! BC modifications to diagonal
     do k = 1, size(this%bc_dir)
@@ -184,18 +183,14 @@ contains
     integer :: i, j, n
     type(btd_matrix) :: a ! mass matrix
 
-    call this%disc%update(u)
     errc = 0
 
     !! Mass matrix
-    call this%disc%eval_mass_matrix
     call a%init(this%nvars, this%nnode)
-    call this%disc%assemble_matrix(a)
+    call compute_mass_matrix(this, t, u, a)
 
     !! Right hand side
-    call this%disc%pde_rhs(t)
-    call this%disc%reg_rhs
-    call this%disc%assemble_vector(udot)
+    call compute_rhs(this, t, u, udot)
 
     !! BC modifications
     do i = 1, size(this%bc_dir)
@@ -211,5 +206,131 @@ contains
     call a%solve(udot%array)
 
   end subroutine eval_udot
+
+
+  subroutine compute_res(this, t, y, ydot, r)
+
+    use cell_data_type
+
+    class(mfe_model), intent(inout) :: this
+    real(r8), intent(in) :: t
+    type(mfe1_vector), intent(in) :: y, ydot
+    type(mfe1_vector), intent(inout) :: r
+
+    integer :: j
+    type(cell_data) :: cdata
+    real(r8) :: f(this%nvars,2)
+
+    call cdata%init(this%neqns)
+    r%array(:,1) = 0.0_r8
+    do j = 1, this%ncell
+      call cdata%update(y%array(:,j:j+1))
+      call this%disc%compute_cell_f(t, cdata, ydot%array(:,j:j+1), f)
+      r%array(:,j) = r%array(:,j) + f(:,1)
+      r%array(:,j+1) = f(:,2)
+    end do
+
+  end subroutine
+
+
+  subroutine compute_rhs(this, t, y, g)
+
+    use cell_data_type
+
+    class(mfe_model), intent(inout) :: this
+    real(r8), intent(in) :: t
+    type(mfe1_vector), intent(in) :: y
+    type(mfe1_vector), intent(inout) :: g ! data intent(out)
+
+    integer :: j
+    type(cell_data) :: cdata
+    real(r8) :: gx(2), gu(this%neqns,2)
+
+    associate (x => y%array(this%nvars,:), u => y%array(1:this%neqns,:))
+      call cdata%init(this%neqns)
+      g%array(:,1) = 0.0_r8
+      do j = 1, this%ncell
+        call cdata%update(y%array(:,j:j+1))
+        call this%disc%compute_cell_rhs(t, cdata, gx, gu)
+        g%array(this%nvars,j) = g%array(this%nvars,j) + gx(1)
+        g%array(1:this%neqns,j) = g%array(1:this%neqns,j) + gu(:,1)
+        g%array(this%nvars,j+1) = gx(2)
+        g%array(1:this%neqns,j+1) = gu(:,2)
+      end do
+    end associate
+
+  end subroutine
+
+  subroutine compute_mass_matrix(this, t, y, c)
+    use cell_data_type
+    class(mfe_model), intent(inout) :: this
+    real(r8), intent(in) :: t
+    type(mfe1_vector), intent(in) :: y
+    type(btd_matrix), intent(inout) :: c  !data is intent(out)
+
+    integer :: j
+    type(cell_data) :: cdata
+    real(r8) :: cell_matrix(this%nvars,this%nvars,2,2)
+
+    associate (x => y%array(this%nvars,:), u => y%array(1:this%neqns,:))
+      call cdata%init(this%neqns)
+      c%l(:,:,1) = 0.0_r8 ! unused
+      c%d(:,:,1) = 0.0_r8
+      do j = 1, this%ncell
+        call cdata%update(y%array(:,j:j+1))
+        call this%disc%compute_cell_mass_matrix(cdata, 1.0_r8, cell_matrix)
+        c%d(:,:,j)   = cell_matrix(:,:,1,1) + c%d(:,:,j)
+        c%l(:,:,j+1) = cell_matrix(:,:,2,1)
+        c%u(:,:,j)   = cell_matrix(:,:,1,2)
+        c%d(:,:,j+1) = cell_matrix(:,:,2,2)
+      end do
+      c%u(:,:,this%nnode) = 0.0_r8  ! unused
+    end associate
+
+  end subroutine
+
+  subroutine compute_mass_matrix_diag(this, t, y, diag)
+    use cell_data_type
+    class(mfe_model), intent(inout) :: this
+    real(r8), intent(in) :: t
+    type(mfe1_vector), intent(in) :: y
+    real(r8), intent(out) :: diag(:,:,:)
+
+    integer :: j
+    type(cell_data) :: cdata
+    real(r8) :: cell_diag(this%nvars,this%nvars,2)
+
+    associate (x => y%array(this%nvars,:), u => y%array(1:this%neqns,:))
+      call cdata%init(this%neqns)
+      diag(:,:,1) = 0.0_r8
+      do j = 1, this%ncell
+        call cdata%update(y%array(:,j:j+1))
+        call this%disc%compute_cell_mass_matrix_diag(cdata, 1.0_r8, cell_diag)
+        diag(:,:,j)   = cell_diag(:,:,1) + diag(:,:,j)
+        diag(:,:,j+1) = cell_diag(:,:,2)
+      end do
+    end associate
+
+  end subroutine
+
+  subroutine add_dfdy(this, t, y, ydot, dfdy)
+
+    class(mfe_model), intent(inout) :: this
+    real(r8), intent(in) :: t
+    type(mfe1_vector), intent(in) :: y, ydot
+    type(btd_matrix), intent(inout) :: dfdy
+
+    integer :: j
+    real(r8) :: cell_matrix(this%nvars,this%nvars,2,2)
+
+    do j = 1, this%ncell
+      call this%disc%compute_cell_dfdy(t, y%array(:,j:j+1), ydot%array(:,j:j+1), cell_matrix)
+      dfdy%d(:,:,j)   = dfdy%d(:,:,j)   + cell_matrix(:,:,1,1)
+      dfdy%l(:,:,j+1) = dfdy%l(:,:,j+1) + cell_matrix(:,:,2,1)
+      dfdy%u(:,:,j)   = dfdy%u(:,:,j)   + cell_matrix(:,:,1,2)
+      dfdy%d(:,:,j+1) = dfdy%d(:,:,j+1) + cell_matrix(:,:,2,2)
+    end do
+
+  end subroutine
 
 end module mfe_model_type

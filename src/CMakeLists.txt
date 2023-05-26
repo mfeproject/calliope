@@ -29,7 +29,7 @@ set(BUILD_SHARED_LIBS YES)
 
 #add_library(common OBJECT pde_class.F90 mfe1_disc_core_type.F90)
 #set_target_properties(common PROPERTIES POSITION_INDEPENDENT_CODE ON)
-add_library(common pde_class.F90 mfe1_disc_core_type.F90)
+add_library(common pde_class.F90 cell_data_type.F90 pde_utilities.F90)
 target_link_libraries(common petaca)
 
 # LIBRARIES IMPLEMENTING THE PDE CLASS

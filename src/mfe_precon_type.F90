@@ -44,6 +44,7 @@ contains
     call this%jac%solve(u%array)
   end subroutine
 
+
   subroutine eval_jacobian(this, u, udot, t, h, stat)
 
     use block_linear_solver
@@ -57,18 +58,13 @@ contains
     real(r8) :: diag(u%neqns+1,u%neqns+1,u%nnode)
     character(:), allocatable :: errmsg
 
-    call this%env%timer%start('preprocessing')
-    call this%model%disc%update(u, udot)
-    call this%env%timer%stop('preprocessing')
-
     call this%env%timer%start('mass-matrix')
-    call this%model%disc%eval_mass_matrix(factor = -1.0_r8 / h)
+    call this%model%compute_mass_matrix(t, u, this%jac)
     call this%env%timer%stop('mass-matrix')
 
-    ! Capture the unscaled diagonal for preconditioning.
+    ! Capture the diagonal for preconditioning.
     call this%env%timer%start('diag-pc')
-    call this%model%disc%assemble_diagonal(diag)
-    diag = (-h) * diag
+    diag = this%jac%d
     do i = 1, size(this%model%bc_dir)
       do j = 1, size(this%model%bc_dir(i)%index)
         n = this%model%bc_dir(i)%index(j)
@@ -80,24 +76,18 @@ contains
     call this%env%timer%stop('diag-pc')
 
     call this%env%timer%start('eval_dfdy')
-    call this%model%disc%eval_dfdy(t, stat, errmsg)
+    this%jac%l = (-1.0_r8/h) * this%jac%l
+    this%jac%d = (-1.0_r8/h) * this%jac%d
+    this%jac%u = (-1.0_r8/h) * this%jac%u
+    call this%model%add_dfdy(t, u, udot, this%jac)
     call this%env%timer%stop('eval_dfdy')
 
-    if (stat /= 0) then
-      call this%env%log%info('eval_dfdy: ' // errmsg)
-      stat = 1
-      return
-    end if
-
-    call this%env%timer%start('assembly')
-    call this%model%disc%assemble_matrix(this%jac)
     do i = 1, size(this%model%bc_dir)
       do j = 1, size(this%model%bc_dir(i)%index)
         n = this%model%bc_dir(i)%index(j)
         call this%jac%set_dir_var(i, n)
       end do
     end do
-    call this%env%timer%stop('assembly')
 
     ! Diagonal preconditioning.
     call this%env%timer%start('diag-pc')
@@ -111,6 +101,8 @@ contains
     call this%env%timer%start('factorization')
     call this%jac%factor
     call this%env%timer%stop('factorization')
+
+    stat = 0
 
   end subroutine eval_jacobian
 

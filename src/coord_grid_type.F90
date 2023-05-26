@@ -123,7 +123,7 @@ contains
         x(n2) = this%grid(1,j+1)
         call partition_interval(this%ratio(j), x(n1:n2))
       end do
-    
+
     rank (2)
 
       allocate(x(size(this%grid,dim=1),1+sum(this%nint)))
@@ -139,7 +139,7 @@ contains
       end do
 
     rank default
-    
+
       error stop "coord_grid%get_grid: invalid rank for x"
 
     end select
