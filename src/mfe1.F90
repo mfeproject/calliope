@@ -76,12 +76,10 @@ program mfe1
     call get_command_argument(n, arg)
     i = scan(arg, '/', back=.true.)
     if (i == len_trim(arg)) i = i - 1 ! remove trailing slash, if any
-    env%pde_lib_dir = trim(arg) // '/'
+    env%pde_libdir = trim(arg) // '/'
 
     n = n + 1
     call get_command_argument(n, arg)
-  else
-    env%pde_lib_dir = ''
   end if
 
   infile = trim(arg)

@@ -46,9 +46,13 @@ contains
 
     call params%get('pde-library', string, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
-    call params%get('pde-lib-dir', libdir, default='', stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    call load_pde(libdir // string, this%p, stat, errmsg)
+    if (params%is_parameter('pde-libdir')) then
+      call params%get('pde-libdir', libdir, stat=stat, errmsg=errmsg)
+      if (stat /= 0) return
+      call load_pde(libdir // string, this%p, stat, errmsg)
+    else
+      call load_pde(string, this%p, stat, errmsg)
+    end if
     if (stat /= 0) return
 
     this%neqns = this%p%neqns()
