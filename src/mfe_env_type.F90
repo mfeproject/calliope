@@ -9,7 +9,7 @@ module mfe_env_type
     type(simlog) :: log
     type(timer_tree) :: timer
     integer :: log_unit, grf_unit
-    character(:), allocatable :: pde_lib_dir
+    character(:), allocatable :: pde_libdir
   end type
 
   public :: VERB_SILENT, VERB_NORMAL, VERB_NOISY  ! export parameters from simlog_type

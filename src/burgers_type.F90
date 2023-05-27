@@ -2,14 +2,13 @@ module burgers_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use pde_class
-  use mfe1_disc_core_type
   use parameter_list_type
   implicit none
   private
 
   type, extends(pde), public :: burgers
     private
-    real(r8) :: visc
+    real(r8) :: lapl_coef(2)
   contains
     procedure, nopass :: neqns
     procedure :: init
@@ -33,40 +32,44 @@ contains
     cp = c_loc(box)
   end subroutine
 
-  subroutine init(this, disc, params, stat, errmsg)
+  subroutine init(this, eqw, params, stat, errmsg)
     use parameter_list_type
     class(burgers), intent(out) :: this
-    type(mfe1_disc_core), intent(in), target :: disc
+    real(r8), intent(in) :: eqw(:)
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
-    this%disc => disc
-    call params%get('visc', this%visc, stat=stat, errmsg=errmsg)
+    real(r8) :: visc
+    this%eqw = eqw(1:1) ! unused
+    call params%get('visc', visc, stat=stat, errmsg=errmsg)
+    this%lapl_coef = [visc, visc]
   end subroutine
 
-  subroutine rhs(this, t)
+  pure subroutine rhs(this, t, cdata, gx, gu)
+
+    use cell_data_type
+    use pde_utilities, only: add_lapl
 
     class(burgers), intent(inout) :: this
     real(r8), intent(in) :: t
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(out) :: gx(:), gu(:,:)
 
     integer  :: j
     real(r8) :: c
 
-    associate (rx1 => this%disc%r(2,1,:), rx2 => this%disc%r(2,2,:), &
-               ru1 => this%disc%r(1,1,:), ru2 => this%disc%r(1,2,:), &
-               u1 => this%disc%u(1,1,:), u2 => this%disc%u(1,2,:), &
-        du => this%disc%du(1,:), n1 => this%disc%n(1,1,:), n2 => this%disc%n(2,1,:))
-      do j = 1, this%disc%ncell
-        c = -(du(j)/6.0_r8)*(2*u1(j)+u2(j))
-        rx1(j) = c * n1(j)
-        ru1(j) = c * n2(j)
-        c = -(du(j)/6.0_r8)*(2*u2(j)+u1(j))
-        rx2(j) = c * n1(j)
-        ru2(j) = c * n2(j)
-      end do
+    associate (u => cdata%u(1,:), du => cdata%du(1), dx => cdata%dx, &
+               nx => cdata%nx(1), nu => cdata%nu(1))
+      c = -(du/6.0_r8)*(2*u(1)+u(2))
+      gx(1)   = c * nx
+      gu(1,1) = c * nu
+
+      c = -(du/6.0_r8)*(2*u(2)+u(1))
+      gx(2)   = c * nx
+      gu(1,2) = c * nu
     end associate
 
-    call this%disc%laplacian(eqno=1, coef=this%visc)
+    call add_lapl(cdata, 1, this%lapl_coef, gx, gu)
 
   end subroutine
 

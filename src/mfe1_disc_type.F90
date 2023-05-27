@@ -3,14 +3,16 @@
 module mfe1_disc_type
 
   use,intrinsic :: iso_fortran_env, only: r8 => real64
-  use mfe1_disc_core_type
   use mfe1_vector_type
   use pde_class
+  use cell_data_type
   implicit none
   private
 
-  type, extends(mfe1_disc_core), public :: mfe1_disc
+  type, public :: mfe1_disc
     private
+    integer, public :: neqns, nvars, ncell
+    real(r8), allocatable :: eqw(:)
     real(r8) :: fdinc
     class(pde), allocatable :: p
     integer :: kreg
@@ -18,17 +20,11 @@ module mfe1_disc_type
     real(r8), allocatable :: eltvsc(:), segspr(:)
   contains
     procedure :: init
-    procedure :: compute_local_residual
-    procedure :: pde_rhs
-    procedure :: eval_dfdy
-    procedure :: update
-    procedure :: recompute
-    procedure :: assemble_vector
-    procedure :: assemble_matrix
-    procedure :: assemble_diagonal
-    procedure :: reg_rhs
-    procedure :: res_mass_matrix
-    procedure :: eval_mass_matrix
+    procedure :: compute_cell_f
+    procedure :: compute_cell_rhs
+    procedure :: compute_cell_mass_matrix
+    procedure :: compute_cell_mass_matrix_diag
+    procedure :: compute_cell_dfdy
   end type
 
 contains
@@ -50,30 +46,18 @@ contains
 
     call params%get('pde-library', string, stat=stat, errmsg=errmsg)
     if (stat /= 0) return
-    call params%get('pde-lib-dir', libdir, default='', stat=stat, errmsg=errmsg)
-    if (stat /= 0) return
-    call load_pde(libdir // string, this%p, stat, errmsg)
-    if (stat /= 0) return
-
-    if (params%is_sublist('pde-params')) then
-      plist => params%sublist('pde-params')
-      call this%p%init(this%mfe1_disc_core, plist, stat, errmsg)
+    if (params%is_parameter('pde-libdir')) then
+      call params%get('pde-libdir', libdir, stat=stat, errmsg=errmsg)
       if (stat /= 0) return
+      call load_pde(libdir // string, this%p, stat, errmsg)
     else
-      stat = -1
-      errmsg = 'missing "pde-params" sublist parameter'
-      return
+      call load_pde(string, this%p, stat, errmsg)
     end if
+    if (stat /= 0) return
 
     this%neqns = this%p%neqns()
     this%nvars = this%neqns+1
     this%ncell = ncell
-    allocate(this%u(this%nvars,2,this%ncell))
-    allocate(this%udot, this%r, mold=this%u)
-    allocate(this%l(this%neqns,this%ncell))
-    allocate(this%du, this%dudx, mold=this%l)
-    allocate(this%dx(this%ncell), this%n(2,this%neqns,this%ncell))
-    allocate(this%mtx(this%nvars,this%nvars,2,2,this%ncell))
 
     select case (this%neqns)
     case (1)
@@ -162,6 +146,16 @@ contains
       return
     end if
 
+    if (params%is_sublist('pde-params')) then
+      plist => params%sublist('pde-params')
+      call this%p%init(this%eqw, plist, stat, errmsg)
+      if (stat /= 0) return
+    else
+      stat = -1
+      errmsg = 'missing "pde-params" sublist parameter'
+      return
+    end if
+
   end subroutine init
 
   subroutine load_pde(libname, p, stat, errmsg)
@@ -198,352 +192,368 @@ contains
 
   end subroutine load_pde
 
-  subroutine compute_local_residual(this, t)
+  pure subroutine compute_cell_f(this, t, cdata, ydot, f)
+    use cell_data_type
     class(mfe1_disc), intent(inout) :: this
     real(r8), intent(in) :: t
-    call this%p%rhs(t)
-    call this%reg_rhs
-    call this%res_mass_matrix
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: ydot(:,:)
+    real(r8), intent(out) :: f(:,:)
+    associate (fx => f(this%nvars,:), fu => f(1:this%neqns,:), &
+        xdot => ydot(this%nvars,:), udot => ydot(1:this%neqns,:))
+      call this%compute_cell_rhs(t, cdata, fx, fu)
+      call subtract_cell_lhs(this, cdata, xdot, udot, fx, fu)
+    end associate
+  end subroutine
+
+  !! Computes the local RHS of the MFE equations
+  pure subroutine compute_cell_rhs(this, t, cdata, gx, gu)
+    class(mfe1_disc), intent(inout) :: this
+    real(r8), intent(in) :: t
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(out) :: gx(:), gu(:,:)
+    call this%p%rhs(t, cdata, gx, gu)
+    call add_cell_press(this, cdata, gx, gu)
+  end subroutine
+
+  !! Local cell pressure regularization contribution to the MFE RHS
+  pure subroutine add_cell_press(this, cdata, gx, gu)
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(inout) :: gx(:), gu(:,:)
+    integer  :: i
+    real(r8) :: c, term_x, term_u
+    do i = 1, this%neqns
+      c = this%eqw(i) * this%segspr(i) / cdata%l(i)**2
+      term_x =   c * cdata%nu(i)
+      term_u = - c * cdata%nx(i)
+      gx(1)   = gx(1)   - term_x
+      gu(i,1) = gu(i,1) - term_u
+      gx(2)   = gx(2)   + term_x
+      gu(i,2) = gu(i,2) + term_u
+    end do
+  end subroutine
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  !! Mass matrix contribution to the local F
+  pure subroutine subtract_cell_lhs(this, cdata, xdot, udot, rx, ru)
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: xdot(:), udot(:,:)
+    real(r8), intent(inout) :: rx(:), ru(:,:)
+    call subtract_cell_mm(this, cdata, xdot, udot, rx, ru)
+    select case (this%kreg)
+    case (1)
+      call subtract_cell_rod_reg(this, cdata, xdot, udot, rx, ru)
+    case (2)
+      call subtract_cell_tg_reg(this, cdata, xdot, udot, rx, ru)
+    end select
+  end subroutine
+
+  !! Pure MFE mass matrix contribution to the local F
+  pure subroutine subtract_cell_mm(this, cdata, xdot, udot, rx, ru)
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: xdot(:), udot(:,:)
+    real(r8), intent(inout) :: rx(:), ru(:,:)
+    integer  :: i
+    real(r8) :: c, ndot(2), term(2)
+    do i = 1, this%neqns
+      c = this%eqw(i)/6.0_r8
+      ndot = cdata%nx(i) * xdot(:) + cdata%nu(i) * udot(i,:)
+      term = (c * cdata%l(i)) * (sum(ndot) + ndot(:))
+
+      rx(:)   = rx(:)   - term * cdata%nx(i)
+      ru(i,:) = ru(i,:) - term * cdata%nu(i)
+    end do
+  end subroutine
+
+  !! Rate-of-deformation dynamic regularization contribution to the local F
+  pure subroutine subtract_cell_rod_reg(this, cdata, xdot, udot, rx, ru)
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: xdot(:), udot(:,:)
+    real(r8), intent(inout) :: rx(:), ru(:,:)
+    integer  :: i
+    real(r8) :: c, term
+    do i = 1, this%neqns
+      c = this%eqw(i)*this%eltvsc(i)/cdata%l(i)
+      term = c*(cdata%nu(i)*(xdot(2)-xdot(1)) - cdata%nx(i)*(udot(i,2)-udot(i,1)))
+      rx(1) = rx(1) + (term * cdata%nu(i))
+      rx(2) = rx(2) - (term * cdata%nu(i))
+      ru(i,1) = ru(i,1) - (term * cdata%nx(i))
+      ru(i,2) = ru(i,2) + (term * cdata%nx(i))
+    end do
+  end subroutine
+
+  !! Total gradient dynamic regularization contribution to the local F
+  pure subroutine subtract_cell_tg_reg(this, cdata, xdot, udot, rx, ru)
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: xdot(:), udot(:,:)
+    real(r8), intent(inout) :: rx(:), ru(:,:)
+    integer  :: i
+    real(r8) :: c, term
+    do i = 1, this%neqns
+      c = this%eqw(i)*this%eltvsc(i)/cdata%l(i)
+      term = c*(xdot(2) - xdot(1))
+      rx(1) = rx(1) + term
+      rx(2) = rx(2) - term
+      c = this%eqw(i)*this%eltvsc(i)/cdata%l(i)
+      term = c*(udot(i,2) - udot(i,1))
+      ru(i,1) = ru(i,1) + term
+      ru(i,2) = ru(i,2) - term
+    end do
+  end subroutine
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  !! Compute the local mass matrix
+  subroutine compute_cell_mass_matrix(this, cdata, fct, mtx)
+    class(mfe1_disc), intent(inout) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: fct
+    real(r8), intent(out) :: mtx(:,:,:,:)
+    call compute_cell_mfe_mass_matrix(this, cdata, fct, mtx)
+    select case (this%kreg)
+    case (1)
+      call add_cell_rod_matrix(this, cdata, fct, mtx)
+    case (2)
+      call add_cell_tg_matrix(this, cdata, fct, mtx)
+    end select
+  end subroutine
+
+  !! Compute the local pure MFE mass matrix
+  subroutine compute_cell_mfe_mass_matrix(this, cdata, fct, mtx)
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: fct
+    real(r8), intent(out) :: mtx(:,:,:,:)
+    integer :: i
+    real(r8) :: c, blk(this%nvars,this%nvars)
+    blk = 0.0_r8
+    do i = 1, this%neqns
+      c = fct*this%eqw(i)*cdata%l(i)/3.0_r8
+      associate (n1 => cdata%nx(i), n2 => cdata%nu(i), ix => this%nvars)
+        blk(ix,ix) = c*n1*n1 + blk(ix,ix)
+        blk(ix,i)  = c*n1*n2
+        blk(i,ix)  = c*n1*n2
+        blk(i,i)   = c*n2*n2
+      end associate
+    end do
+    mtx(:,:,1,1) = blk
+    mtx(:,:,2,2) = blk
+    blk = 0.5_r8 * blk
+    mtx(:,:,2,1) = blk
+    mtx(:,:,1,2) = blk
+  end subroutine
+
+  !! Rate-of-deformation dynamic regularization contribution to the local mass matrix
+  subroutine add_cell_rod_matrix(this, cdata, fct, mtx)
+
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: fct
+    real(r8), intent(inout) :: mtx(:,:,:,:)
+
+    integer :: i
+    real(r8) :: c, term_xx, term_xu, term_uu
+
+    do i = 1, this%neqns
+      c = fct * this%eqw(i) * this%eltvsc(i) / cdata%l(i)
+      associate (n1 => cdata%nu(i), n2 => cdata%nu(i), ix => this%nvars)
+        term_xx =   c * n2 * n2
+        term_xu = - c * n1 * n2
+        term_uu =   c * n1 * n1
+
+        mtx(ix,ix,1,1) = mtx(ix,ix,1,1) + term_xx
+        mtx(ix,i,1,1)  = mtx(ix,i,1,1)  + term_xu
+        mtx(i,ix,1,1)  = mtx(i,ix,1,1)  + term_xu
+        mtx(i,i,1,1)   = mtx(i,i,1,1)   + term_uu
+
+        mtx(ix,ix,2,2) = mtx(ix,ix,2,2) + term_xx
+        mtx(ix,i,2,2)  = mtx(ix,i,2,2)  + term_xu
+        mtx(i,ix,2,2)  = mtx(i,ix,2,2)  + term_xu
+        mtx(i,i,2,2)   = mtx(i,i,2,2)   + term_uu
+
+        mtx(ix,ix,2,1) = mtx(ix,ix,2,1) - term_xx
+        mtx(ix,i,2,1)  = mtx(ix,i,2,1)  - term_xu
+        mtx(i,ix,2,1)  = mtx(i,ix,2,1)  - term_xu
+        mtx(i,i,2,1)   = mtx(i,i,2,1)   - term_uu
+
+        mtx(ix,ix,1,2) = mtx(ix,ix,1,2) - term_xx
+        mtx(ix,i,1,2)  = mtx(ix,i,1,2)  - term_xu
+        mtx(i,ix,1,2)  = mtx(i,ix,1,2)  - term_xu
+        mtx(i,i,1,2)   = mtx(i,i,1,2)   - term_uu
+      end associate
+    end do
+
   end subroutine
 
 
-  subroutine pde_rhs(this, t)
+  !! Total gradient dynamic regularization contribution to the local mass matrix
+  subroutine add_cell_tg_matrix(this, cdata, fct, mtx)
+
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: fct
+    real(r8), intent(inout) :: mtx(:,:,:,:)
+
+    integer :: i
+    real(r8) :: c
+
+    do i = 1, this%neqns
+      c = fct * this%eqw(i) * this%eltvsc(i) / cdata%l(i)
+      associate (ix => this%nvars)
+        mtx(ix,ix,1,1) = mtx(ix,ix,1,1) + c
+        mtx(i,i,1,1)   = mtx(i,i,1,1)   + c
+
+        mtx(ix,ix,2,2) = mtx(ix,ix,2,2) + c
+        mtx(i,i,2,2)   = mtx(i,i,2,2)   + c
+
+        mtx(ix,ix,2,1) = mtx(ix,ix,2,1) - c
+        mtx(i,i,2,1)   = mtx(i,i,2,1)   - c
+
+        mtx(ix,ix,1,2) = mtx(ix,ix,1,2) - c
+        mtx(i,i,1,2)   = mtx(i,i,1,2)   - c
+      end associate
+    end do
+
+  end subroutine
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  !! Compute the block diagonal of the local mass matrix
+  pure subroutine compute_cell_mass_matrix_diag(this, cdata, fct, diag)
     class(mfe1_disc), intent(inout) :: this
-    real(r8), intent(in) :: t
-    call this%p%rhs(t)
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: fct
+    real(r8), intent(out) :: diag(:,:,:)
+    call compute_cell_mfe_mass_matrix_diag(this, cdata, fct, diag)
+    select case (this%kreg)
+    case (1)
+      call add_cell_rod_matrix_diag(this, cdata, fct, diag)
+    case (2)
+      call add_cell_tg_matrix_diag(this, cdata, fct, diag)
+    end select
+  end subroutine
+
+  !! Compute the block diagonal of the local pure MFE mass matrix
+  pure subroutine compute_cell_mfe_mass_matrix_diag(this, cdata, fct, diag)
+
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: fct
+    real(r8), intent(out) :: diag(:,:,:)
+
+    integer :: i
+    real(r8) :: c, blk(this%nvars,this%nvars)
+
+    blk = 0.0_r8
+    do i = 1, this%neqns
+      c = fct*this%eqw(i)*cdata%l(i)/3.0_r8
+      associate (n1 => cdata%nx(i), n2 => cdata%nu(i), ix => this%nvars)
+        blk(ix,ix) = c*n1*n1 + blk(ix,ix)
+        blk(ix,i)  = c*n1*n2
+        blk(i,ix)  = c*n1*n2
+        blk(i,i)   = c*n2*n2
+      end associate
+    end do
+
+    diag(:,:,1) = blk
+    diag(:,:,2) = blk
+
+  end subroutine
+
+  !! Rate-of-deformation dynamic regularization contribution to the local mass matrix diagonal
+  pure subroutine add_cell_rod_matrix_diag(this, cdata, fct, diag)
+
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: fct
+    real(r8), intent(inout) :: diag(:,:,:)
+
+    integer :: i
+    real(r8) :: c, term_xx, term_xu, term_uu
+
+    do i = 1, this%neqns
+      c = fct * this%eqw(i) * this%eltvsc(i) / cdata%l(i)
+      associate (n1 => cdata%nu(i), n2 => cdata%nu(i), ix => this%nvars)
+        term_xx =   c * n2 * n2
+        term_xu = - c * n1 * n2
+        term_uu =   c * n1 * n1
+
+        diag(ix,ix,1) = diag(ix,ix,1) + term_xx
+        diag(ix,i,1)  = diag(ix,i,1)  + term_xu
+        diag(i,ix,1)  = diag(i,ix,1)  + term_xu
+        diag(i,i,1)   = diag(i,i,1)   + term_uu
+
+        diag(ix,ix,2) = diag(ix,ix,2) + term_xx
+        diag(ix,i,2)  = diag(ix,i,2)  + term_xu
+        diag(i,ix,2)  = diag(i,ix,2)  + term_xu
+        diag(i,i,2)   = diag(i,i,2)   + term_uu
+      end associate
+    end do
+
+  end subroutine
+
+  !! Rate-of-deformation dynamic regularization contribution to the local mass matrix diagonal
+  pure subroutine add_cell_tg_matrix_diag(this, cdata, fct, diag)
+
+    class(mfe1_disc), intent(in) :: this
+    type(cell_data), intent(in) :: cdata
+    real(r8), intent(in) :: fct
+    real(r8), intent(inout) :: diag(:,:,:)
+
+    integer :: i
+    real(r8) :: c
+
+    do i = 1, this%neqns
+      c = fct * this%eqw(i) * this%eltvsc(i) / cdata%l(i)
+      associate (ix => this%nvars)
+        diag(ix,ix,1) = diag(ix,ix,1) + c
+        diag(i,i,1)   = diag(i,i,1)   + c
+
+        diag(ix,ix,2) = diag(ix,ix,2) + c
+        diag(i,i,2)   = diag(i,i,2)   + c
+      end associate
+    end do
+
   end subroutine
 
 
-  subroutine eval_dfdy(this, t, stat, errmsg)
+  subroutine compute_cell_dfdy(this, t, y, ydot, dfdy)
+
+    use cell_data_type
 
     class(mfe1_disc), intent(inout) :: this
     real(r8), intent(in) :: t
-    integer, intent(out) :: stat
-    character(:), allocatable, intent(out) :: errmsg
+    real(r8), intent(in) :: y(:,:), ydot(:,:)
+    real(r8), intent(out) :: dfdy(:,:,:,:)
 
-    integer :: i, j, k, l
+    real(r8) :: f0(this%nvars,2), f(this%nvars,2)
+
+    integer :: i, k, l
     real(r8) :: rh
-    real(r8), allocatable :: r_save(:,:,:)
+    type(cell_data) :: cdata  !TODO? make persistent workspace? pass as argument?
 
     rh = 1.0_r8 / this%fdinc
 
-    !! Compute and save the unperturbed residual
-    call this%compute_local_residual(t)
-    r_save = this%r
+    call cdata%init(this%neqns)
+    call cdata%update(y)
+    call compute_cell_f(this, t, cdata, ydot, f0)
 
     do k = 1, 2
-      do i = 1, this%neqns+1
-        this%u(i,k,:) = this%u(i,k,:) + this%fdinc
-        call this%recompute !TODO: should check for inverted cells (stat below)
-        call this%compute_local_residual(t)
-        this%u(i,k,:) = this%u(i,k,:) - this%fdinc
-        do j = 1, this%ncell
+      do i = 1, this%nvars
+        call cdata%set_val(i, k, y(i,k) + this%fdinc, update=.true.) !TODO: inverted cell check?
+        call compute_cell_f(this, t, cdata, ydot, f)
+        call cdata%set_val(i, k, y(i,k), update=.false.)
           do l = 1, 2
-            this%mtx(:,i,l,k,j) = this%mtx(:,i,l,k,j) + rh * (this%r(:,l,j) - r_save(:,l,j))
+            dfdy(:,i,l,k) = rh * (f(:,l) - f0(:,l))
           end do
-        end do
       end do
     end do
-
-    stat = 0
-
-  end subroutine eval_dfdy
-
-  subroutine update(this, u, udot)
-    class(mfe1_disc), intent(inout) :: this
-    type(mfe1_vector), intent(in) :: u
-    type(mfe1_vector), intent(in), optional :: udot
-    integer :: j
-    do j = 1, this%ncell
-      this%u(:,1,j) = u%array(:,j)
-      this%u(:,2,j) = u%array(:,j+1)
-    end do
-    if (present(udot)) then
-      do j = 1, this%ncell
-        this%udot(:,1,j) = udot%array(:,j)
-        this%udot(:,2,j) = udot%array(:,j+1)
-      end do
-    end if
-    this%udot_valid = present(udot)
-    call this%recompute
-  end subroutine
-
-  subroutine recompute(this)
-    class(mfe1_disc), intent(inout) :: this
-    integer :: i, j
-    do j = 1, this%ncell
-      this%dx(j) = this%u(this%neqns+1,2,j) - this%u(this%neqns+1,1,j)
-      do i = 1, this%neqns
-        this%du(i,j) = this%u(i,2,j) - this%u(i,1,j)
-        this%l(i,j) = sqrt(this%dx(j)**2 + this%du(i,j)**2)
-        this%n(1,i,j) = -this%du(i,j) / this%l(i,j)
-        this%n(2,i,j) =  this%dx(j) / this%l(i,j)
-        this%dudx(i,j) = this%du(i,j) / this%dx(j)
-      end do
-    end do
-  end subroutine
-
-  subroutine assemble_vector(this, r)
-    class(mfe1_disc), intent(in) :: this
-    type(mfe1_vector), intent(inout) :: r
-    integer :: j
-    r%array(:,1) = this%r(:,1,1)
-    do j = 2, this%ncell
-      r%array(:,j) = this%r(:,2,j-1) + this%r(:,1,j)
-    end do
-    r%array(:,this%ncell+1) = this%r(:,2,this%ncell)
-  end subroutine
-
-  subroutine assemble_matrix(this, a)
-    use btd_matrix_type
-    class(mfe1_disc), intent(in) :: this
-    type(btd_matrix), intent(inout) :: a
-    integer :: j
-    a%d(:,:,1) = this%mtx(:,:,1,1,1)
-    do j = 2, this%ncell
-      a%d(:,:,j) = this%mtx(:,:,1,1,j) + this%mtx(:,:,2,2,j-1)
-    end do
-    a%d(:,:,this%ncell+1) = this%mtx(:,:,2,2,this%ncell)
-    do j = 1, this%ncell
-      a%u(:,:,j) = this%mtx(:,:,1,2,j)
-    end do
-    a%u(:,:,this%ncell+1) = 0.0_r8
-    a%l(:,:,1) = 0.0_r8
-    do j = 2, this%ncell + 1
-      a%l(:,:,j) = this%mtx(:,:,2,1,j-1)
-    end do
-  end subroutine
-
-  subroutine assemble_diagonal(this, diag)
-    class(mfe1_disc), intent(in) :: this
-    real(r8), intent(out) :: diag(:,:,:)
-    integer :: j
-    diag(:,:,1) = this%mtx(:,:,1,1,1)
-    do j = 2, this%ncell
-      diag(:,:,j) = this%mtx(:,:,1,1,j) + this%mtx(:,:,2,2,j-1)
-    end do
-    diag(:,:,this%ncell+1) = this%mtx(:,:,2,2,this%ncell)
-  end subroutine
-
-  subroutine res_mass_matrix(this)  !TODO: rename
-
-    class(mfe1_disc), intent(inout) :: this
-
-    integer :: i, j
-    real(r8) :: c(this%neqns)
-    real(r8) :: term2, dxdot, dudot
-    real(r8) :: ndot(2), term(2)
-
-    ASSERT(this%udot_valid)
-
-    !! Pure MFE mass matrix
-    c = this%eqw / 6.0_r8
-    associate (rx => this%r(this%neqns+1,:,:), xdot => this%udot(this%neqns+1,:,:))
-      do j = 1, this%ncell
-        do i = 1, this%neqns
-          ! Normal velocity at each vertex.
-          ndot(:) = this%n(1,i,j) * xdot(:,j) + this%n(2,i,j) * this%udot(i,:,j)
-          term(:) = (c(i) * this%l(i,j)) * (sum(ndot) + ndot(:))
-
-          rx(:,j)  = rx(:,j)  - term * this%n(1,i,j)
-          this%r(i,:,j) = this%r(i,:,j) - term * this%n(2,i,j)
-        end do
-      end do
-    end associate
-
-    !! Regularization contribution to the mass matrix
-    select case (this%kreg)
-    case (1)  ! Rate of deformation penalization
-
-      associate (rx => this%r(this%neqns+1,:,:), xdot => this%udot(this%neqns+1,:,:))
-        c = this%eqw * this%eltvsc
-        do j = 1, this%ncell
-          dxdot = xdot(2,j) - xdot(1,j)
-          do i = 1, this%neqns
-            dudot = this%udot(i,2,j) - this%udot(i,1,j)
-            term2 = (c(i) / this%l(i,j)) * (this%n(2,i,j) * dxdot - this%n(1,i,j) * dudot)
-
-            rx(1,j) = rx(1,j) + (term2 * this%n(2,i,j))
-            rx(2,j) = rx(2,j) - (term2 * this%n(2,i,j))
-
-            this%r(i,1,j) = this%r(i,1,j) - (term2 * this%n(1,i,j))
-            this%r(i,2,j) = this%r(i,2,j) + (term2 * this%n(1,i,j))
-          end do
-        end do
-      end associate
-
-    case (2)  ! Total gradient penalization
-
-      associate (rx => this%r(this%neqns+1,:,:), xdot => this%udot(this%neqns+1,:,:))
-        c = this%eqw * this%eltvsc
-        do j = 1, this%ncell
-          dxdot = xdot(2,j) - xdot(1,j)
-          do i = 1, this%neqns
-            dudot = this%udot(i,2,j) - this%udot(i,1,j)
-
-            rx(1,j) = rx(1,j) + ((c(i) / this%l(i,j)) * dxdot)
-            rx(2,j) = rx(2,j) - ((c(i) / this%l(i,j)) * dxdot)
-
-            this%r(i,1,j) = this%r(i,1,j) + ((c(i) / this%l(i,j)) * dudot)
-            this%r(i,2,j) = this%r(i,2,j) - ((c(i) / this%l(i,j)) * dudot)
-          end do
-        end do
-      end associate
-    end select
-
-  end subroutine res_mass_matrix
-
-  subroutine eval_mass_matrix(this, factor, diag_only)
-
-    class(mfe1_disc), intent(inout) :: this
-    real(r8), intent(in), optional :: factor
-    logical, intent(in), optional :: diag_only
-
-    integer :: i, j, ix
-    logical :: diagonal
-    real(r8) :: blk(this%neqns+1,this%neqns+1)
-    real(r8) :: fac, term, term_xx, term_xu, term_uu
-    real(r8) :: c(this%neqns)
-
-    ix = this%neqns + 1
-
-    if (present(factor)) then
-      fac = factor
-    else
-      fac = 1.0_r8
-    end if
-
-    if (present(diag_only)) then
-      diagonal = diag_only
-    else
-      diagonal = .false.
-    end if
-
-   !!!
-   !!! PURE MFE MASS MATRIX
-
-    c = (fac / 3.0_r8) * this%eqw
-    do j = 1, this%ncell
-      blk = 0.0_r8
-      do i = 1, this%neqns
-        associate (n1 => this%n(1,i,j), n2 => this%n(2,i,j))
-          blk(ix,ix)   =  (c(i) * this%l(i,j)) * n1 * n1 + blk(ix,ix)
-          blk(ix,i)    =  (c(i) * this%l(i,j)) * n1 * n2
-          blk(i,ix)    =  (c(i) * this%l(i,j)) * n1 * n2
-          blk(i,i)     =  (c(i) * this%l(i,j)) * n2 * n2
-        end associate
-      end do
-
-      ! COPY THE BASIC blk
-
-      this%mtx(:,:,1,1,j) = blk
-      this%mtx(:,:,2,2,j) = blk
-
-      if (diagonal) cycle
-
-      blk = 0.5_r8 * blk
-
-      this%mtx(:,:,2,1,j) = blk
-      this%mtx(:,:,1,2,j) = blk
-    end do
-
-   !!!
-   !!!  Regularization contribution to the mass matrix.
-
-    select case (this%kreg)
-    case (1)
-
-     !!!
-     !!! RATE OF DEFORMATION PENALIZATION
-
-      c = fac * this%eqw * this%eltvsc
-      do j = 1, this%ncell
-        do i = 1, this%neqns
-          associate (n1 => this%n(1,i,j), n2 => this%n(2,i,j))
-            term = c(i) / this%l(i,j)
-            term_xx =   term * n2 * n2
-            term_xu = - term * n1 * n2
-            term_uu =   term * n1 * n1
-          end associate
-
-          this%mtx(ix,ix,1,1,j) = this%mtx(ix,ix,1,1,j) + term_xx
-          this%mtx(ix,i,1,1,j)  = this%mtx(ix,i,1,1,j)  + term_xu
-          this%mtx(i,ix,1,1,j)  = this%mtx(i,ix,1,1,j)  + term_xu
-          this%mtx(i,i,1,1,j)   = this%mtx(i,i,1,1,j)   + term_uu
-
-          this%mtx(ix,ix,2,2,j) = this%mtx(ix,ix,2,2,j) + term_xx
-          this%mtx(ix,i,2,2,j)  = this%mtx(ix,i,2,2,j)  + term_xu
-          this%mtx(i,ix,2,2,j)  = this%mtx(i,ix,2,2,j)  + term_xu
-          this%mtx(i,i,2,2,j)   = this%mtx(i,i,2,2,j)   + term_uu
-
-          if (diagonal) cycle
-
-          this%mtx(ix,ix,2,1,j) = this%mtx(ix,ix,2,1,j) - term_xx
-          this%mtx(ix,i,2,1,j)  = this%mtx(ix,i,2,1,j)  - term_xu
-          this%mtx(i,ix,2,1,j)  = this%mtx(i,ix,2,1,j)  - term_xu
-          this%mtx(i,i,2,1,j)   = this%mtx(i,i,2,1,j)   - term_uu
-
-          this%mtx(ix,ix,1,2,j) = this%mtx(ix,ix,1,2,j) - term_xx
-          this%mtx(ix,i,1,2,j)  = this%mtx(ix,i,1,2,j)  - term_xu
-          this%mtx(i,ix,1,2,j)  = this%mtx(i,ix,1,2,j)  - term_xu
-          this%mtx(i,i,1,2,j)   = this%mtx(i,i,1,2,j)   - term_uu
-        end do
-      end do
-
-    case (2)
-
-     !!!
-     !!! TOTAL GRADIENT PENALIZATION
-
-      c = fac * this%eqw * this%eltvsc
-      do j = 1, this%ncell
-        do i = 1, this%neqns
-          term = c(i) / this%l(i,j)
-
-          this%mtx(ix,ix,1,1,j) = this%mtx(ix,ix,1,1,j) + term
-          this%mtx(i,i,1,1,j)   = this%mtx(i,i,1,1,j)   + term
-
-          this%mtx(ix,ix,2,2,j) = this%mtx(ix,ix,2,2,j) + term
-          this%mtx(i,i,2,2,j)   = this%mtx(i,i,2,2,j)   + term
-
-          if (diagonal) cycle
-
-          this%mtx(ix,ix,2,1,j) = this%mtx(ix,ix,2,1,j) - term
-          this%mtx(i,i,2,1,j)   = this%mtx(i,i,2,1,j)   - term
-
-          this%mtx(ix,ix,1,2,j) = this%mtx(ix,ix,1,2,j) - term
-          this%mtx(i,i,1,2,j)   = this%mtx(i,i,1,2,j)   - term
-        end do
-      end do
-    end select
-
-  end subroutine eval_mass_matrix
-
-
-  subroutine reg_rhs(this)
-
-    class(mfe1_disc), intent(inout) :: this
-
-    integer :: i, j
-    real(r8) :: term, term_x, term_u
-    real(r8) :: c(this%neqns)
-
-    associate (rx => this%r(this%neqns+1,:,:))
-      c = this%eqw * this%segspr
-      do j = 1, this%ncell
-        do i = 1, this%neqns
-          term = c(i) / this%l(i,j)**2
-          term_x =   term * this%n(2,i,j)
-          term_u = - term * this%n(1,i,j)
-
-          rx(1,j)  = rx(1,j)  - term_x
-          this%r(i,1,j) = this%r(i,1,j) - term_u
-
-          rx(2,j)  = rx(2,j)  + term_x
-          this%r(i,2,j) = this%r(i,2,j) + term_u
-        end do
-      end do
-    end associate
 
   end subroutine
 

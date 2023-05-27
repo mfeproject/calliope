@@ -71,7 +71,7 @@ contains
 
     if (params%is_sublist('mfe-model')) then
       plist => params%sublist('mfe-model')
-      call plist%set('pde-lib-dir', this%env%pde_lib_dir) !UGLY HACK
+      if (allocated(this%env%pde_libdir)) call plist%set('pde-libdir', this%env%pde_libdir) !UGLY HACK
       call this%model%init(nnode, plist, stat, errmsg)
       if (stat /= 0) return
     else
