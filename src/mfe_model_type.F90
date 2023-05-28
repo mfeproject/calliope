@@ -12,6 +12,7 @@ module mfe_model_type
   use,intrinsic :: iso_fortran_env, only: r8 => real64
   use mfe1_vector_type
   use mfe1_disc_type
+  use cell_data_type
   use btd_matrix_type
   use block_linear_solver
   use index_func_type
@@ -210,8 +211,6 @@ contains
 
   subroutine compute_res(this, t, y, ydot, r)
 
-    use cell_data_type
-
     class(mfe_model), intent(inout) :: this
     real(r8), intent(in) :: t
     type(mfe1_vector), intent(in) :: y, ydot
@@ -234,8 +233,6 @@ contains
 
 
   subroutine compute_rhs(this, t, y, g)
-
-    use cell_data_type
 
     class(mfe_model), intent(inout) :: this
     real(r8), intent(in) :: t
@@ -262,7 +259,6 @@ contains
   end subroutine
 
   subroutine compute_mass_matrix(this, t, y, c)
-    use cell_data_type
     class(mfe_model), intent(inout) :: this
     real(r8), intent(in) :: t
     type(mfe1_vector), intent(in) :: y
@@ -290,7 +286,6 @@ contains
   end subroutine
 
   subroutine compute_mass_matrix_diag(this, t, y, diag)
-    use cell_data_type
     class(mfe_model), intent(inout) :: this
     real(r8), intent(in) :: t
     type(mfe1_vector), intent(in) :: y

@@ -12,7 +12,6 @@ module navier_stokes_type
     private
     real(r8) :: lapl_coef(2,3)
   contains
-    procedure, nopass :: neqns
     procedure :: init
     procedure :: rhs
   end type
@@ -21,22 +20,18 @@ module navier_stokes_type
 
 contains
 
-  pure integer function neqns()
-    neqns = 3
-  end function
-
   subroutine alloc_pde(cp) bind(c)
     use,intrinsic :: iso_c_binding
     type(c_ptr), intent(out) :: cp
     type(pde_box), pointer :: box
     allocate(box)
-    allocate(navier_stokes :: box%p)
+    allocate(navier_stokes(npde=3) :: box%p)
     cp = c_loc(box)
   end subroutine
 
   subroutine init(this, eqw, params, stat, errmsg)
     use parameter_list_type
-    class(navier_stokes), intent(out) :: this
+    class(navier_stokes(*)), intent(out) :: this
     real(r8), intent(in) :: eqw(:)
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
@@ -52,7 +47,7 @@ contains
     use cell_data_type
     use pde_utilities, only: add_lapl
 
-    class(navier_stokes), intent(inout) :: this
+    class(navier_stokes(*)), intent(inout) :: this
     real(r8), intent(in) :: t
     type(cell_data), intent(in) :: cdata
     real(r8), intent(out) :: gx(:), gu(:,:)

@@ -29,11 +29,11 @@ contains
   pure subroutine update1(this)
     class(cell_data), intent(inout) :: this
     this%dx = this%x(2) - this%x(1)
-    this%du(:) = this%u(:,2) - this%u(:,1)
-    this%dudx(:) = this%du / this%dx
-    this%l(:) = sqrt(this%dx**2 + this%du**2)
-    this%nx(:) = -this%du/this%l
-    this%nu(:) =  this%dx/this%l
+    this%du = this%u(:,2) - this%u(:,1)
+    this%dudx = this%du / this%dx
+    this%l = sqrt(this%dx**2 + this%du**2)
+    this%nx = -this%du/this%l
+    this%nu =  this%dx/this%l
   end subroutine
 
   pure subroutine update2(this, y)

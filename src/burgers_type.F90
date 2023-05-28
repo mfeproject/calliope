@@ -10,7 +10,6 @@ module burgers_type
     private
     real(r8) :: lapl_coef(2)
   contains
-    procedure, nopass :: neqns
     procedure :: init
     procedure :: rhs
   end type
@@ -19,22 +18,18 @@ module burgers_type
 
 contains
 
-  pure integer function neqns()
-    neqns = 1
-  end function
-
   subroutine alloc_pde(cp) bind(c)
     use,intrinsic :: iso_c_binding
     type(c_ptr), intent(out) :: cp
     type(pde_box), pointer :: box
     allocate(box)
-    allocate(burgers :: box%p)
+    allocate(burgers(1) :: box%p)
     cp = c_loc(box)
   end subroutine
 
   subroutine init(this, eqw, params, stat, errmsg)
     use parameter_list_type
-    class(burgers), intent(out) :: this
+    class(burgers(*)), intent(out) :: this
     real(r8), intent(in) :: eqw(:)
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
@@ -50,7 +45,7 @@ contains
     use cell_data_type
     use pde_utilities, only: add_lapl
 
-    class(burgers), intent(inout) :: this
+    class(burgers(*)), intent(inout) :: this
     real(r8), intent(in) :: t
     type(cell_data), intent(in) :: cdata
     real(r8), intent(out) :: gx(:), gu(:,:)

@@ -6,20 +6,21 @@ module pde_class
   implicit none
   private
 
-  type, abstract, public :: pde
+  type, abstract, public :: pde(npde)
+    integer,len :: npde
     real(r8), allocatable :: eqw(:)
   contains
-    procedure(neqns), nopass, deferred :: neqns
+    !procedure(neqns), nopass, deferred :: neqns
     procedure(init), deferred :: init
     procedure(rhs), deferred :: rhs
   end type
 
   abstract interface
-    pure integer function neqns()
-    end function
+    !pure integer function neqns()
+    !end function
     subroutine init(this, eqw, params, stat, errmsg)
       import pde, parameter_list, r8
-      class(pde), intent(out) :: this
+      class(pde(*)), intent(out) :: this
       real(r8), intent(in) :: eqw(:)
       type(parameter_list), intent(inout) :: params
       integer, intent(out) :: stat
@@ -27,7 +28,7 @@ module pde_class
     end subroutine
     pure subroutine rhs(this, t, cdata, gx, gu)
       import pde, cell_data, r8
-      class(pde), intent(inout) :: this
+      class(pde(*)), intent(inout) :: this
       real(r8), intent(in) :: t
       type(cell_data), intent(in) :: cdata
       real(r8), intent(out) :: gx(:), gu(:,:)
@@ -35,7 +36,7 @@ module pde_class
   end interface
 
   type, public :: pde_box
-    class(pde), allocatable :: p
+    class(pde(:)), allocatable :: p
   end type
 
 end module

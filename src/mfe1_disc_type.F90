@@ -14,7 +14,7 @@ module mfe1_disc_type
     integer, public :: neqns, nvars, ncell
     real(r8), allocatable :: eqw(:)
     real(r8) :: fdinc
-    class(pde), allocatable :: p
+    class(pde(:)), allocatable :: p
     integer :: kreg
     logical :: udot_valid = .false.
     real(r8), allocatable :: eltvsc(:), segspr(:)
@@ -55,7 +55,7 @@ contains
     end if
     if (stat /= 0) return
 
-    this%neqns = this%p%neqns()
+    this%neqns = this%p%npde
     this%nvars = this%neqns+1
     this%ncell = ncell
 
@@ -164,7 +164,7 @@ contains
     use,intrinsic :: iso_c_binding
 
     character(*), intent(in) :: libname
-    class(pde), allocatable, intent(out) :: p
+    class(pde(:)), allocatable, intent(out) :: p
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
 
@@ -193,7 +193,6 @@ contains
   end subroutine load_pde
 
   pure subroutine compute_cell_f(this, t, cdata, ydot, f)
-    use cell_data_type
     class(mfe1_disc), intent(inout) :: this
     real(r8), intent(in) :: t
     type(cell_data), intent(in) :: cdata
@@ -524,8 +523,6 @@ contains
 
 
   subroutine compute_cell_dfdy(this, t, y, ydot, dfdy)
-
-    use cell_data_type
 
     class(mfe1_disc), intent(inout) :: this
     real(r8), intent(in) :: t

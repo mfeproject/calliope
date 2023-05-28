@@ -23,7 +23,6 @@ module drift_diff_type
     real(r8) :: lambda, eps, uscf, vscf
     real(r8) :: lapl_coef(2,2)
   contains
-    procedure, nopass :: neqns
     procedure :: init
     procedure :: rhs
   end type
@@ -32,22 +31,18 @@ module drift_diff_type
 
 contains
 
-  pure integer function neqns()
-    neqns = 2
-  end function
-
   subroutine alloc_pde(cp) bind(c)
     use,intrinsic :: iso_c_binding
     type(c_ptr), intent(out) :: cp
     type(pde_box), pointer :: box
     allocate(box)
-    allocate(drift_diff :: box%p)
+    allocate(drift_diff(2) :: box%p)
     cp = c_loc(box)
   end subroutine
 
   subroutine init(this, eqw, params, stat, errmsg)
     use parameter_list_type
-    class(drift_diff), intent(out) :: this
+    class(drift_diff(*)), intent(out) :: this
     real(r8), intent(in) :: eqw(:)
     type(parameter_list), intent(inout) :: params
     integer, intent(out) :: stat
@@ -71,7 +66,7 @@ contains
     use cell_data_type
     use pde_utilities, only: add_lapl
 
-    class(drift_diff), intent(inout) :: this
+    class(drift_diff(*)), intent(inout) :: this
     real(r8), intent(in) :: t
     type(cell_data), intent(in) :: cdata
     real(r8), intent(out) :: gx(:), gu(:,:)
