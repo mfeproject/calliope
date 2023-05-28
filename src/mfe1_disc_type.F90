@@ -195,7 +195,7 @@ contains
   pure subroutine compute_cell_f(this, t, cdata, ydot, f)
     class(mfe1_disc), intent(inout) :: this
     real(r8), intent(in) :: t
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: ydot(:,:)
     real(r8), intent(out) :: f(:,:)
     associate (fx => f(this%nvars,:), fu => f(1:this%neqns,:), &
@@ -209,7 +209,7 @@ contains
   pure subroutine compute_cell_rhs(this, t, cdata, gx, gu)
     class(mfe1_disc), intent(inout) :: this
     real(r8), intent(in) :: t
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(out) :: gx(:), gu(:,:)
     call this%p%rhs(t, cdata, gx, gu)
     call add_cell_press(this, cdata, gx, gu)
@@ -218,7 +218,7 @@ contains
   !! Local cell pressure regularization contribution to the MFE RHS
   pure subroutine add_cell_press(this, cdata, gx, gu)
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(inout) :: gx(:), gu(:,:)
     integer  :: i
     real(r8) :: c, term_x, term_u
@@ -238,7 +238,7 @@ contains
   !! Mass matrix contribution to the local F
   pure subroutine subtract_cell_lhs(this, cdata, xdot, udot, rx, ru)
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: xdot(:), udot(:,:)
     real(r8), intent(inout) :: rx(:), ru(:,:)
     call subtract_cell_mm(this, cdata, xdot, udot, rx, ru)
@@ -253,7 +253,7 @@ contains
   !! Pure MFE mass matrix contribution to the local F
   pure subroutine subtract_cell_mm(this, cdata, xdot, udot, rx, ru)
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: xdot(:), udot(:,:)
     real(r8), intent(inout) :: rx(:), ru(:,:)
     integer  :: i
@@ -271,7 +271,7 @@ contains
   !! Rate-of-deformation dynamic regularization contribution to the local F
   pure subroutine subtract_cell_rod_reg(this, cdata, xdot, udot, rx, ru)
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: xdot(:), udot(:,:)
     real(r8), intent(inout) :: rx(:), ru(:,:)
     integer  :: i
@@ -289,7 +289,7 @@ contains
   !! Total gradient dynamic regularization contribution to the local F
   pure subroutine subtract_cell_tg_reg(this, cdata, xdot, udot, rx, ru)
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: xdot(:), udot(:,:)
     real(r8), intent(inout) :: rx(:), ru(:,:)
     integer  :: i
@@ -311,7 +311,7 @@ contains
   !! Compute the local mass matrix
   subroutine compute_cell_mass_matrix(this, cdata, fct, mtx)
     class(mfe1_disc), intent(inout) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: fct
     real(r8), intent(out) :: mtx(:,:,:,:)
     call compute_cell_mfe_mass_matrix(this, cdata, fct, mtx)
@@ -326,7 +326,7 @@ contains
   !! Compute the local pure MFE mass matrix
   subroutine compute_cell_mfe_mass_matrix(this, cdata, fct, mtx)
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: fct
     real(r8), intent(out) :: mtx(:,:,:,:)
     integer :: i
@@ -352,7 +352,7 @@ contains
   subroutine add_cell_rod_matrix(this, cdata, fct, mtx)
 
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: fct
     real(r8), intent(inout) :: mtx(:,:,:,:)
 
@@ -395,7 +395,7 @@ contains
   subroutine add_cell_tg_matrix(this, cdata, fct, mtx)
 
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: fct
     real(r8), intent(inout) :: mtx(:,:,:,:)
 
@@ -426,7 +426,7 @@ contains
   !! Compute the block diagonal of the local mass matrix
   pure subroutine compute_cell_mass_matrix_diag(this, cdata, fct, diag)
     class(mfe1_disc), intent(inout) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: fct
     real(r8), intent(out) :: diag(:,:,:)
     call compute_cell_mfe_mass_matrix_diag(this, cdata, fct, diag)
@@ -442,7 +442,7 @@ contains
   pure subroutine compute_cell_mfe_mass_matrix_diag(this, cdata, fct, diag)
 
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: fct
     real(r8), intent(out) :: diag(:,:,:)
 
@@ -469,7 +469,7 @@ contains
   pure subroutine add_cell_rod_matrix_diag(this, cdata, fct, diag)
 
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: fct
     real(r8), intent(inout) :: diag(:,:,:)
 
@@ -501,7 +501,7 @@ contains
   pure subroutine add_cell_tg_matrix_diag(this, cdata, fct, diag)
 
     class(mfe1_disc), intent(in) :: this
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(in) :: fct
     real(r8), intent(inout) :: diag(:,:,:)
 
@@ -533,11 +533,11 @@ contains
 
     integer :: i, k, l
     real(r8) :: rh
-    type(cell_data) :: cdata  !TODO? make persistent workspace? pass as argument?
+    type(cell_data(this%neqns)) :: cdata  !TODO? make persistent workspace? pass as argument?
 
     rh = 1.0_r8 / this%fdinc
 
-    call cdata%init(this%neqns)
+    !call cdata%init(this%neqns)
     call cdata%update(y)
     call compute_cell_f(this, t, cdata, ydot, f0)
 

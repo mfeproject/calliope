@@ -30,7 +30,7 @@ module pde_class
       import pde, cell_data, r8
       class(pde(*)), intent(inout) :: this
       real(r8), intent(in) :: t
-      type(cell_data), intent(in) :: cdata
+      type(cell_data(*)), intent(in) :: cdata
       real(r8), intent(out) :: gx(:), gu(:,:)
     end subroutine
   end interface

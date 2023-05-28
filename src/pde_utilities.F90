@@ -16,7 +16,7 @@ contains
 
   pure subroutine add_lapl(cdata, i, c, gx, gu)
 
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     integer, intent(in) :: i
     real(r8), intent(in) :: c(:)
     real(r8), intent(inout) :: gx(:), gu(:,:)

@@ -49,7 +49,7 @@ contains
 
     class(navier_stokes(*)), intent(inout) :: this
     real(r8), intent(in) :: t
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(*)), intent(in) :: cdata
     real(r8), intent(out) :: gx(:), gu(:,:)
 
     integer :: k

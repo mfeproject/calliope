@@ -47,7 +47,7 @@ contains
 
     class(burgers(*)), intent(inout) :: this
     real(r8), intent(in) :: t
-    type(cell_data), intent(in) :: cdata
+    type(cell_data(1)), intent(in) :: cdata
     real(r8), intent(out) :: gx(:), gu(:,:)
 
     integer  :: j

@@ -217,10 +217,10 @@ contains
     type(mfe1_vector), intent(inout) :: r
 
     integer :: j
-    type(cell_data) :: cdata
+    type(cell_data(this%neqns)) :: cdata
     real(r8) :: f(this%nvars,2)
 
-    call cdata%init(this%neqns)
+    !call cdata%init(this%neqns)
     r%array(:,1) = 0.0_r8
     do j = 1, this%ncell
       call cdata%update(y%array(:,j:j+1))
@@ -240,11 +240,11 @@ contains
     type(mfe1_vector), intent(inout) :: g ! data intent(out)
 
     integer :: j
-    type(cell_data) :: cdata
+    type(cell_data(this%neqns)) :: cdata
     real(r8) :: gx(2), gu(this%neqns,2)
 
     associate (x => y%array(this%nvars,:), u => y%array(1:this%neqns,:))
-      call cdata%init(this%neqns)
+      !call cdata%init(this%neqns)
       g%array(:,1) = 0.0_r8
       do j = 1, this%ncell
         call cdata%update(y%array(:,j:j+1))
@@ -265,11 +265,11 @@ contains
     type(btd_matrix), intent(inout) :: c  !data is intent(out)
 
     integer :: j
-    type(cell_data) :: cdata
+    type(cell_data(this%neqns)) :: cdata
     real(r8) :: cell_matrix(this%nvars,this%nvars,2,2)
 
     associate (x => y%array(this%nvars,:), u => y%array(1:this%neqns,:))
-      call cdata%init(this%neqns)
+      !call cdata%init(this%neqns)
       c%l(:,:,1) = 0.0_r8 ! unused
       c%d(:,:,1) = 0.0_r8
       do j = 1, this%ncell
@@ -292,11 +292,11 @@ contains
     real(r8), intent(out) :: diag(:,:,:)
 
     integer :: j
-    type(cell_data) :: cdata
+    type(cell_data(this%neqns)) :: cdata
     real(r8) :: cell_diag(this%nvars,this%nvars,2)
 
     associate (x => y%array(this%nvars,:), u => y%array(1:this%neqns,:))
-      call cdata%init(this%neqns)
+      !call cdata%init(this%neqns)
       diag(:,:,1) = 0.0_r8
       do j = 1, this%ncell
         call cdata%update(y%array(:,j:j+1))
