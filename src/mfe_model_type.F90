@@ -25,6 +25,7 @@ module mfe_model_type
     type(index_func), allocatable :: bc_dir(:)
     !! Persistent temporary work space
     real(r8), allocatable, private :: diag(:,:,:)
+    type(cell_data(:)), allocatable :: cdata
   contains
     procedure :: init
     procedure :: set_boundary_values
@@ -48,6 +49,7 @@ contains
     character(:), allocatable, intent(out) :: errmsg
 
     type(parameter_list), pointer :: plist
+    integer :: n
 
     this%nnode = nnode
     this%ncell = nnode - 1
@@ -56,6 +58,8 @@ contains
     this%neqns = this%disc%neqns
     this%nvars = this%neqns + 1
 
+    n = this%neqns
+    allocate(cell_data(n) :: this%cdata)
     allocate(this%diag(this%nvars,this%nvars,this%nnode))
     allocate(this%bc_dir(this%nvars))
 
@@ -217,14 +221,14 @@ contains
     type(mfe1_vector), intent(inout) :: r
 
     integer :: j
-    type(cell_data(this%neqns)) :: cdata
+    !type(cell_data(this%neqns)) :: cdata
     real(r8) :: f(this%nvars,2)
 
     !call cdata%init(this%neqns)
     r%array(:,1) = 0.0_r8
     do j = 1, this%ncell
-      call cdata%update(y%array(:,j:j+1))
-      call this%disc%compute_cell_f(t, cdata, ydot%array(:,j:j+1), f)
+      call this%cdata%update(y%array(:,j:j+1))
+      call this%disc%compute_cell_f(t, this%cdata, ydot%array(:,j:j+1), f)
       r%array(:,j) = r%array(:,j) + f(:,1)
       r%array(:,j+1) = f(:,2)
     end do
@@ -240,15 +244,15 @@ contains
     type(mfe1_vector), intent(inout) :: g ! data intent(out)
 
     integer :: j
-    type(cell_data(this%neqns)) :: cdata
+    !type(cell_data(this%neqns)) :: cdata
     real(r8) :: gx(2), gu(this%neqns,2)
 
     associate (x => y%array(this%nvars,:), u => y%array(1:this%neqns,:))
       !call cdata%init(this%neqns)
       g%array(:,1) = 0.0_r8
       do j = 1, this%ncell
-        call cdata%update(y%array(:,j:j+1))
-        call this%disc%compute_cell_rhs(t, cdata, gx, gu)
+        call this%cdata%update(y%array(:,j:j+1))
+        call this%disc%compute_cell_rhs(t, this%cdata, gx, gu)
         g%array(this%nvars,j) = g%array(this%nvars,j) + gx(1)
         g%array(1:this%neqns,j) = g%array(1:this%neqns,j) + gu(:,1)
         g%array(this%nvars,j+1) = gx(2)
@@ -265,7 +269,7 @@ contains
     type(btd_matrix), intent(inout) :: c  !data is intent(out)
 
     integer :: j
-    type(cell_data(this%neqns)) :: cdata
+    !type(cell_data(this%neqns)) :: cdata
     real(r8) :: cell_matrix(this%nvars,this%nvars,2,2)
 
     associate (x => y%array(this%nvars,:), u => y%array(1:this%neqns,:))
@@ -273,8 +277,8 @@ contains
       c%l(:,:,1) = 0.0_r8 ! unused
       c%d(:,:,1) = 0.0_r8
       do j = 1, this%ncell
-        call cdata%update(y%array(:,j:j+1))
-        call this%disc%compute_cell_mass_matrix(cdata, 1.0_r8, cell_matrix)
+        call this%cdata%update(y%array(:,j:j+1))
+        call this%disc%compute_cell_mass_matrix(this%cdata, 1.0_r8, cell_matrix)
         c%d(:,:,j)   = cell_matrix(:,:,1,1) + c%d(:,:,j)
         c%l(:,:,j+1) = cell_matrix(:,:,2,1)
         c%u(:,:,j)   = cell_matrix(:,:,1,2)
@@ -292,15 +296,15 @@ contains
     real(r8), intent(out) :: diag(:,:,:)
 
     integer :: j
-    type(cell_data(this%neqns)) :: cdata
+    !type(cell_data(this%neqns)) :: cdata
     real(r8) :: cell_diag(this%nvars,this%nvars,2)
 
     associate (x => y%array(this%nvars,:), u => y%array(1:this%neqns,:))
       !call cdata%init(this%neqns)
       diag(:,:,1) = 0.0_r8
       do j = 1, this%ncell
-        call cdata%update(y%array(:,j:j+1))
-        call this%disc%compute_cell_mass_matrix_diag(cdata, 1.0_r8, cell_diag)
+        call this%cdata%update(y%array(:,j:j+1))
+        call this%disc%compute_cell_mass_matrix_diag(this%cdata, 1.0_r8, cell_diag)
         diag(:,:,j)   = cell_diag(:,:,1) + diag(:,:,j)
         diag(:,:,j+1) = cell_diag(:,:,2)
       end do
