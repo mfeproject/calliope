@@ -42,12 +42,12 @@ contains
       return
     end if
     if (params%is_vector(grid_key)) then
-      call params%get(grid_key, rarray, stat=stat, errmsg=errmsg)
+      call params%get(grid_key, rarray, stat, errmsg)
       if (stat /= 0) return
       allocate(this%grid(1,size(rarray)))
       this%grid(1,:) = rarray
     else if (params%is_matrix(grid_key)) then
-      call params%get(grid_key, this%grid, stat=stat, errmsg=errmsg)
+      call params%get(grid_key, this%grid, stat, errmsg)
       if (stat /= 0) return
     else
       stat = 1
@@ -64,7 +64,7 @@ contains
     n = n - 1 ! expected size of the following arrays
 
     !! The number of subintervals for each coarse grid segment (required)
-    call params%get(nint_key, iarray, stat=stat, errmsg=errmsg)
+    call params%get(nint_key, iarray, stat, errmsg)
     if (stat /= 0) return
     if (size(iarray) /= n) then
       stat = 1
@@ -79,7 +79,7 @@ contains
 
     !! The ratio for biased subdivision for each segment (optional)
     if (params%is_parameter(ratio_key)) then
-      call params%get(ratio_key, rarray, stat=stat, errmsg=errmsg)
+      call params%get(ratio_key, rarray, stat, errmsg)
       if (stat /= 0) return
       if (size(rarray) /= n) then
         stat = 1

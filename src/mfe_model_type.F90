@@ -72,9 +72,9 @@ contains
 
       block
         logical :: left, right
-        call plist%get('dir-left', left, stat=stat, errmsg=errmsg)
+        call plist%get('dir-left', left, stat, errmsg)
         if (stat /= 0) return
-        call plist%get('dir-right', right, stat=stat, errmsg=errmsg)
+        call plist%get('dir-right', right, stat, errmsg)
         if (stat /= 0) return
         this%bc_dir(1)%index = pack([1, this%nnode], [left, right])
       end block
@@ -84,14 +84,14 @@ contains
       block
         integer :: i
         logical, allocatable :: left(:), right(:)
-        call plist%get('dir-left', left, stat=stat, errmsg=errmsg)
+        call plist%get('dir-left', left, stat, errmsg)
         if (stat /= 0) return
         if (size(left) /= this%neqns) then
           stat = -1
           errmsg = '"dir-left" requires a vector of ' // i_to_c(this%neqns) // ' values'
           return
         end if
-        call plist%get('dir-right', right, stat=stat, errmsg=errmsg)
+        call plist%get('dir-right', right, stat, errmsg)
         if (stat /= 0) return
         if (size(right) /= this%neqns) then
           stat = -1
@@ -108,9 +108,9 @@ contains
     !! Configure fixed/free boundary nodes
     block
       logical :: left, right
-      call params%get('fixed-node-left', left, default=.true., stat=stat, errmsg=errmsg)
+      call params%get('fixed-node-left', left, stat, errmsg, default=.true.)
       if (stat /= 0) return
-      call params%get('fixed-node-right', right, default=.true., stat=stat, errmsg=errmsg)
+      call params%get('fixed-node-right', right, stat, errmsg, default=.true.)
       if (stat /= 0) return
       this%bc_dir(this%nvars)%index = pack([1, this%nnode], [left, right])
     end block

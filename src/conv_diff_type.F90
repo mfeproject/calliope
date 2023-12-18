@@ -41,7 +41,7 @@ contains
     character(:), allocatable, intent(out) :: errmsg
     real(r8) :: visc
     this%eqw = eqw(1:1) ! unused
-    call params%get('visc', visc, stat=stat, errmsg=errmsg)
+    call params%get('visc', visc, stat, errmsg)
     this%lapl_coef = [visc, visc]
   end subroutine
 

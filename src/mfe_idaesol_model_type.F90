@@ -57,7 +57,7 @@ contains
     select case (this%model%neqns)
     case (1)
 
-      call params%get('abs-u-tol', this%ptol(1), stat=stat, errmsg=errmsg)
+      call params%get('abs-u-tol', this%ptol(1), stat, errmsg)
       if (stat /= 0) return
       if (this%ptol(1) <= 0.0) then
         stat = -1
@@ -69,7 +69,7 @@ contains
 
       block
         real(r8), allocatable :: abs_u_tol(:)
-        call params%get('abs-u-tol', abs_u_tol, stat=stat, errmsg=errmsg)
+        call params%get('abs-u-tol', abs_u_tol, stat, errmsg)
         if (stat /= 0) return
         if (size(abs_u_tol) /= this%model%neqns) then
           stat = -1
@@ -86,7 +86,7 @@ contains
     end select
 
     associate (abs_x_tol => this%ptol(this%model%nvars))
-      call params%get('abs-x-tol', abs_x_tol, stat=stat, errmsg=errmsg)
+      call params%get('abs-x-tol', abs_x_tol, stat, errmsg)
       if (stat /= 0) return
       if (abs_x_tol <= 0) then
         stat = -1
@@ -95,7 +95,7 @@ contains
       end if
     end associate
 
-    call params%get('rel-dx-tol', this%rtol, stat=stat, errmsg=errmsg)
+    call params%get('rel-dx-tol', this%rtol, stat, errmsg)
     if (stat /= 0) return
     if (this%rtol <= 0) then
       stat = -1
@@ -103,7 +103,7 @@ contains
       return
     end if
 
-    call params%get('dxmin', this%dxmin, default=tiny(this%dxmin), stat=stat, errmsg=errmsg)
+    call params%get('dxmin', this%dxmin, stat, errmsg, default=tiny(this%dxmin))
     if (stat /= 0) return
     if (this%dxmin < 0.0_r8) then !TODO: <= 0.0?
       stat = -1

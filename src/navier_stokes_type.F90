@@ -43,7 +43,7 @@ contains
     character(:), allocatable, intent(out) :: errmsg
     real(r8) :: visc
     this%eqw = eqw(1:3)
-    call params%get('visc', visc, stat=stat, errmsg=errmsg)
+    call params%get('visc', visc, stat, errmsg)
     this%lapl_coef = spread(this%eqw*visc, dim=1, ncopies=2)
   end subroutine
 

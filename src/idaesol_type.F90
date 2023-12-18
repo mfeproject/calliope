@@ -241,7 +241,7 @@ contains
 
     this%model => model
 
-    call params%get('nlk-max-iter', this%mitr, default=5, stat=stat, errmsg=errmsg)
+    call params%get('nlk-max-iter', this%mitr, stat, errmsg, default=5)
     if (stat /= 0) return
     if (this%mitr < 1) then
       stat = -1
@@ -249,7 +249,7 @@ contains
       return
     end if
 
-    call params%get('nlk-tol', this%ntol, default=0.1_r8, stat=stat, errmsg=errmsg)
+    call params%get('nlk-tol', this%ntol, stat, errmsg, default=0.1_r8)
     if (stat /= 0) return
     if (this%ntol <= 0 .or. this%ntol > 1) then
       stat = -1
@@ -257,7 +257,7 @@ contains
       return
     end if
 
-    call params%get('nlk-max-vec', maxv, default=this%mitr-1, stat=stat, errmsg=errmsg)
+    call params%get('nlk-max-vec', maxv, stat, errmsg, default=this%mitr-1)
     if (stat /= 0) return
     if (maxv <= 0) then
       stat = -1
@@ -266,7 +266,7 @@ contains
     end if
     maxv = min(maxv, this%mitr-1)
 
-    call params%get('nlk-vec-tol', vtol, default=0.01_r8, stat=stat, errmsg=errmsg)
+    call params%get('nlk-vec-tol', vtol, stat, errmsg, default=0.01_r8)
     if (stat /= 0) return
     if (vtol <= 0) then
       stat = -1
@@ -274,7 +274,7 @@ contains
       return
     end if
 
-    call params%get('h-max', this%h_max, default=huge(this%h_max), stat=stat, errmsg=errmsg)
+    call params%get('h-max', this%h_max, stat, errmsg, default=huge(this%h_max))
     if (stat /= 0) return
     if (this%h_max <= 0) then
       stat = -1
@@ -282,7 +282,7 @@ contains
       return
     end if
 
-    call params%get('h-min', this%h_min, default=tiny(this%h_min), stat=stat, errmsg=errmsg)
+    call params%get('h-min', this%h_min, stat, errmsg, default=tiny(this%h_min))
     if (stat /= 0) return
     if (this%h_min < 0) then
       stat = -1
@@ -294,7 +294,7 @@ contains
       return
     end if
 
-    call params%get('max-try', this%max_try, default=10, stat=stat, errmsg=errmsg)
+    call params%get('max-try', this%max_try, stat, errmsg, default=10)
     if (stat /= 0) return
     if (this%max_try < 1) then
       stat = -1

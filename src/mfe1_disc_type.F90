@@ -44,10 +44,10 @@ contains
     character(:), allocatable :: string, libdir
     type(parameter_list), pointer :: plist
 
-    call params%get('pde-library', string, stat=stat, errmsg=errmsg)
+    call params%get('pde-library', string, stat, errmsg)
     if (stat /= 0) return
     if (params%is_parameter('pde-libdir')) then
-      call params%get('pde-libdir', libdir, stat=stat, errmsg=errmsg)
+      call params%get('pde-libdir', libdir, stat, errmsg)
       if (stat /= 0) return
       call load_pde(libdir // string, this%p, stat, errmsg)
     else
@@ -65,7 +65,7 @@ contains
       this%eqw = [1.0_r8] ! Not a parameter for scalar PDE
 
       !TODO: rename variable
-      call params%get('eltvsc', rtmp, stat=stat, errmsg=errmsg)
+      call params%get('eltvsc', rtmp, stat, errmsg)
       if (stat /= 0) return
       if (rtmp < 0.0) then
         stat = -1
@@ -75,7 +75,7 @@ contains
       this%eltvsc = [rtmp]
 
       !TODO: rename variable
-      call params%get('segspr', rtmp, stat=stat, errmsg=errmsg)
+      call params%get('segspr', rtmp, stat, errmsg)
       if (stat /= 0) return
       if (rtmp < 0.0) then
         stat = -1
@@ -87,7 +87,7 @@ contains
     case (2:)
 
       !TODO: rename variable
-      call params%get('eqw', this%eqw, default=spread(1.0_r8,dim=1,ncopies=this%neqns), stat=stat, errmsg=errmsg)
+      call params%get('eqw', this%eqw, stat, errmsg, default=spread(1.0_r8,dim=1,ncopies=this%neqns))
       if (stat /= 0) return
       if (size(this%eqw) /= this%neqns) then
         stat = -1
@@ -100,7 +100,7 @@ contains
       end if
 
       !TODO: rename variable
-      call params%get('eltvsc', this%eltvsc, stat=stat, errmsg=errmsg)
+      call params%get('eltvsc', this%eltvsc, stat, errmsg)
       if (stat /= 0) return
       if (size(this%eltvsc) /= this%neqns) then
         stat = -1
@@ -113,7 +113,7 @@ contains
       end if
 
       !TODO: rename variable
-      call params%get('segspr', this%segspr, stat=stat, errmsg=errmsg)
+      call params%get('segspr', this%segspr, stat, errmsg)
       if (stat /= 0) return
       if (size(this%segspr) /= this%neqns) then
         stat = -1
@@ -127,7 +127,7 @@ contains
     end select
 
     !TODO: rename variable
-    call params%get('kreg', this%kreg, stat=stat, errmsg=errmsg)
+    call params%get('kreg', this%kreg, stat, errmsg)
     if (stat /= 0) return
     select case (this%kreg)
     case (1,2) ! okay
@@ -138,7 +138,7 @@ contains
     end select
 
     !TODO: rename variable
-    call params%get('fdinc', this%fdinc, stat=stat, errmsg=errmsg)
+    call params%get('fdinc', this%fdinc, stat, errmsg)
     if (stat /= 0) return
     if (this%fdinc <= 0.0) then
       stat = -1

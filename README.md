@@ -25,7 +25,7 @@ this as a pattern for the 2D and 3D codes.)
 The code depends on the petaca library whose source is available
  [here](https://github.com/nncarlson/petaca). After compiling and installing the
  library, set your environment variable `PETACA_ROOT` to your installation
- path before proceeding.
+ path before proceeding. Version v23.12 or later is required.
 
 ```shell
 $ git clone https://github.com/mfeproject/calliope.git

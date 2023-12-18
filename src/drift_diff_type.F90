@@ -53,13 +53,13 @@ contains
     integer, intent(out) :: stat
     character(:), allocatable, intent(out) :: errmsg
     this%eqw = eqw(1:2)
-    call params%get('u-scale-factor', this%uscf, stat=stat, errmsg=errmsg)
+    call params%get('u-scale-factor', this%uscf, stat, errmsg)
     if (stat /= 0) return
-    call params%get('v-scale-factor', this%vscf, stat=stat, errmsg=errmsg)
+    call params%get('v-scale-factor', this%vscf, stat, errmsg)
     if (stat /= 0) return
-    call params%get('lambda', this%lambda, stat=stat, errmsg=errmsg)
+    call params%get('lambda', this%lambda, stat, errmsg)
     if (stat /= 0) return
-    call params%get('eps', this%eps, stat=stat, errmsg=errmsg)
+    call params%get('eps', this%eps, stat, errmsg)
     if (stat /= 0) return
     this%lapl_coef = spread([this%eqw(1)*this%lambda, this%eqw(2)/this%eps], dim=1, ncopies=2)
   end subroutine
